@@ -60,27 +60,27 @@ public class HypoMachine {
             MBR = memory[(int) MAR];
             IR = MBR;
             PC++;
-            int opcode = (int) (IR / 10000);
-            int Op1Mode = (int) ((IR % 10000) / 1000);
-            int Op1GPR = (int) (((IR % 10000) % 1000) / 100);
-            int Op2Mode = (int) ((((IR % 10000) % 1000) % 100) / 10);
-            int Op2GPR = (int) ((((IR % 10000) % 1000) % 100) % 10);
-            switch (opcode) {
+            long opcode = (IR / 10000);
+            long Op1Mode = ((IR % 10000) / 1000);
+            long Op1GPR = (((IR % 10000) % 1000) / 100);
+            long Op2Mode = ((((IR % 10000) % 1000) % 100) / 10);
+            long Op2GPR = ((((IR % 10000) % 1000) % 100) % 10);
+            switch ((int)opcode) {
                 case 0: // Halt
                     isToExecute = false;
                     System.out.println("Program Halted");
                     break;
                 case 1: // Add
-                    executeArithmetic('+');
+                    executeArithmetic('+', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     break;
                 case 2: // Subtract
-                    executeArithmetic('-');
+                    executeArithmetic('-', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     break;
                 case 3: // Multiply
-                    executeArithmetic('*');
+                    executeArithmetic('*', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     break;
                 case 4: // Divide
-                    executeArithmetic('/');
+                    executeArithmetic('/', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     break;
                 case 5: // Move
                     executeMove();
@@ -111,22 +111,40 @@ public class HypoMachine {
         }
     }
 
-    private static void executeArithmetic(char operation ) {
+    private static int executeArithmetic( char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR ) {
         long op1Addr = memory[(int) PC++];
         long op2Addr = memory[(int) PC++];
-    
-        if (op1Addr >= MEMORY_SIZE || op2Addr >= MEMORY_SIZE) {
-            System.err.println("Invalid Memory Address");
-            return;
+
+        long Op1Value = fetchOperand(Op1Mode, Op1GPR)[1];
+        long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
+        long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
+        long result;
+
+        if(Op2Value == 0 && operator == '/') {
+            System.out.println("Invalid operation: Division by Zero");
+            return -4;
         }
-        long op1 = memory[(int) op1Addr];
-        long op2 = memory[(int) op2Addr];
-        switch (operation) {
-            case '+': memory[(int) op1Addr] = op1 + op2; break;
-            case '-': memory[(int) op1Addr] = op1 - op2; break;
-            case '*': memory[(int) op1Addr] = op1 * op2; break;
-            case '/': memory[(int) op1Addr] = (op2 != 0) ? op1 / op2 : 0;
+
+        switch (operator) {
+            case '+': result = Op1Value + Op2Value; break;
+            case '-': result = Op1Value - Op2Value; break;
+            case '*': result = Op1Value * Op2Value; break;
+            case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0;
+            default: 
+                System.err.println("Invalid Operator");
+                return -5;
         }
+
+        if(Op1Mode == 1) {
+            GPRs[(int)Op1GPR] = result;
+        } else if (Op1Mode == 6) {
+            System.err.println("Destination operand cannot be immediate value");
+            return -6;
+        } else {
+            memory[(int) Op1Address] = result;
+        }
+
+        return 1;
     }
 
     private static void executeMove() {
@@ -200,18 +218,22 @@ public class HypoMachine {
         }
     }
 
-    private static long fetchOperand(long OpMode, long OpGPR) {
+    private static long[] fetchOperand(long OpMode, long OpGPR) {
         long OpAddress;
-        long OpValue = 0;
+        long OpValue;
+        long[] operand = new long[2];
 
         if(((int) OpGPR) > 8 || ((int) OpGPR) < 0) {
             System.out.println("Invalid GPR Address");
-            return -2;
+            operand[0] = -2;
+            operand[1] = -2;
+            return operand;
         }
 
         switch((int)OpMode) {
             case 1: // Register Mode
                 OpValue = GPRs[(int)OpGPR];
+                OpAddress = -1;
                 break;
             case 2: // Register Deferred Mode
                 OpAddress = GPRs[(int) OpGPR];
@@ -219,7 +241,9 @@ public class HypoMachine {
                     OpValue = memory[(int) OpAddress];
                 } else {
                     System.out.println("Invalid Memory Address");
-                    return -2;
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
                 }
                 break;
             case 3: // Autoincrement mode
@@ -228,7 +252,9 @@ public class HypoMachine {
                     OpValue = memory[(int) OpAddress];
                 } else {
                     System.out.println("Invalid Memory Address");
-                    return -2;
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
                 }
                 GPRs[(int) OpGPR]++;
                 break;
@@ -238,7 +264,9 @@ public class HypoMachine {
                     OpValue = memory[(int) OpAddress];
                 } else {
                     System.out.println("Invalid Memory Address");
-                    return -2;
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
                 }
                 break;
             case 5: // Direct Mode
@@ -247,17 +275,24 @@ public class HypoMachine {
                     OpValue = memory[(int) OpAddress];
                 } else {
                     System.out.println("Invalid Memory Address");
-                    return -2;
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
                 }
                 break;
             case 6: // Immediate Mode
                 OpValue = memory[(int) PC++];
+                OpAddress = -1;
                 break;
             default: // Invalid Mode
                 System.out.println("Invalid Operand Mode");
-                return -3;
+                operand[0] = -3;
+                operand[1] = -3;
+                return operand;
         }
 
-        return OpValue;
+        operand[0] = OpAddress;
+        operand[1] = OpValue;
+        return operand;
     }
 }
