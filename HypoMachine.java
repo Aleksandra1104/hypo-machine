@@ -83,19 +83,19 @@ public class HypoMachine {
                     executeArithmetic('/', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     break;
                 case 5: // Move
-                    executeMove();
+                    executeMove(Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     break;
                 case 6: // Branch
                     executeBranch();
                     break;
                 case 7: // BrOnMinus
-                    executeBranchOnCondition(value -> value < 0);
+                    executeBranchOnCondition(Op1Mode, Op1GPR, value -> value < 0);
                     break;
                 case 8: // BrOnPlus
-                    executeBranchOnCondition(value -> value > 0);
+                    executeBranchOnCondition(Op1Mode, Op1GPR, value -> value > 0);
                     break;
                 case 9: // BrOnZero
-                    executeBranchOnCondition(value -> value == 0);
+                    executeBranchOnCondition(Op1Mode, Op1GPR, value -> value == 0);
                     break;
                 case 10: // Push
                     executePush();
@@ -112,8 +112,7 @@ public class HypoMachine {
     }
 
     private static int executeArithmetic( char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR ) {
-        long op1Addr = memory[(int) PC++];
-        long op2Addr = memory[(int) PC++];
+        
 
         long Op1Value = fetchOperand(Op1Mode, Op1GPR)[1];
         long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
@@ -147,14 +146,21 @@ public class HypoMachine {
         return 1;
     }
 
-    private static void executeMove() {
-        long destAddr = memory[(int) PC++];
-        long srcAddr = memory[(int) PC++];
-        if (destAddr < MEMORY_SIZE && srcAddr < MEMORY_SIZE) {
-            memory[(int) destAddr] = memory[(int) srcAddr];
+    private static int executeMove(long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR) {
+        
+        long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
+        long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
+
+        if(Op1Mode == 1) {
+            GPRs[(int) Op1GPR] = Op2Value;
+        } else if(Op1Mode == 6){
+            System.err.println("Destination operand cannot be immediate value");
+            return -6;
         } else {
-            System.err.println("Invalid Memory Address");
+            memory[(int)Op1Address] = Op2Value;
         }
+        
+        return 1;
     }
     
     private static void executeBranch() {
@@ -166,17 +172,23 @@ public class HypoMachine {
         }
     }
 
-    private static void executeBranchOnCondition(java.util.function.LongPredicate condition) {
-        long op1Addr = memory[(int) PC++];
-        long branchAddr = memory[(int) PC++];
-        if (op1Addr >= MEMORY_SIZE || branchAddr >= MEMORY_SIZE) {
+    private static int executeBranchOnCondition(long Op1Mode, long Op1GPR, java.util.function.LongPredicate condition) {
+        long Op1Value = fetchOperand(Op1Mode, Op1GPR)[1];
+        long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
+    
+        long branchAddr = memory[(int) PC];
+        if (Op1Address >= MEMORY_SIZE || branchAddr >= MEMORY_SIZE) {
             System.err.println("Invalid Memory Address");
-            return;
+            return -2;
         }
-        long op1 = memory[(int) op1Addr];
-        if (condition.test(op1)) {
+       
+        if (condition.test(Op1Value)) {
             PC = branchAddr;
+        } else {
+            PC++;
         }
+
+        return 1;
     }
 
     private static void executePush() {
