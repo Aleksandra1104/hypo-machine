@@ -9,20 +9,31 @@ public class HypoMachine {
     private static long MAR, MBR, IR, SP, PC, PSR, Clock;
 
     public static void main(String[] args) {
+
+        try (
+            PrintWriter fileWriter = new PrintWriter(new FileWriter("memory_dump.txt"));
+            PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
+        ) {
+
         initializeSystem();
-        
         Scanner scanner = new Scanner(System.in);
         System.out.print("Enter executable file name: ");
         String fileName = scanner.nextLine();
         long startAddress = absoluteLoader(fileName);
         if (startAddress >= 0) {
             PC = startAddress;
-            dumpMemory("After Loading Program", 0, 100);
+            dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 100);
             executeProgram();
             
         } 
-        dumpMemory("After Executing Program", 0, 100);
-        scanner.close();
+       
+        dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100);
+        scanner.close();   
+        System.out.println("Memory dump written to memory_dump.txt");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        
     }
 
     private static void initializeSystem() {
@@ -263,33 +274,100 @@ public class HypoMachine {
         SP++;
     }
 
-    private static void dumpMemory(String message, int start, int size) {
-        System.out.println(message);
-        System.out.println("PC: " + PC + " | Clock: " + Clock);
-        System.out.println("PSR: " + PSR);
-        System.out.printf("%4s: ", "GPRs");
-        for(int i = 0; i < 8; i++) {
-            System.out.printf("%5s%d ", "GPR", i+1);
+
+
+    private static void dumpMemory(PrintWriter fileOut, PrintWriter consoleOut, String message, int start, int size) {
+        // Print to both file and console
+        printBoth(fileOut, consoleOut, message);
+        printBoth(fileOut, consoleOut, "PC: " + PC + " | Clock: " + Clock);
+        printBoth(fileOut, consoleOut, "PSR: " + PSR);
+        
+        fileOut.printf("%4s: ", "GPRs");
+        consoleOut.printf("%4s: ", "GPRs");
+        for (int i = 0; i < 8; i++) {
+            fileOut.printf("%5s%d ", "GPR", i + 1);
+            consoleOut.printf("%5s%d ", "GPR", i + 1);
         }
-        System.out.println();
-        System.out.printf("%4s ", " ");
-        for(int i = 0; i < GPRs.length; i++) {
-            System.out.printf("%6d ", GPRs[i]);
+        fileOut.println();
+        consoleOut.println();
+
+        fileOut.printf("%4s ", " ");
+        consoleOut.printf("%4s ", " ");
+        for (int i = 0; i < GPRs.length; i++) {
+            fileOut.printf("%6d ", GPRs[i]);
+            consoleOut.printf("%6d ", GPRs[i]);
         }
-        System.out.println();
-        System.out.printf("%4s ", " ");
-        for(int i = 0; i < 10; i++ ){
-            System.out.printf("%6s","------");
+        fileOut.println();
+        consoleOut.println();
+
+        fileOut.printf("%4s ", " ");
+        consoleOut.printf("%4s ", " ");
+        for (int i = 0; i < 10; i++) {
+            fileOut.printf("%6s", "------");
+            consoleOut.printf("%6s", "------");
         }
-        System.out.println();
+        fileOut.println();
+        consoleOut.println();
+
         for (int i = start; i < start + size && i < MEMORY_SIZE; i += 10) {
-            System.out.printf("%4d: ", i);
+            fileOut.printf("%4d: ", i);
+            consoleOut.printf("%4d: ", i);
             for (int j = 0; j < 10 && (i + j) < MEMORY_SIZE; j++) {
-                System.out.printf("%6d ", memory[i + j]);
+                fileOut.printf("%6d ", memory[i + j]);
+                consoleOut.printf("%6d ", memory[i + j]);
             }
-            System.out.println();
+            fileOut.println();
+            consoleOut.println();
         }
     }
+
+    private static void printBoth(PrintWriter fileOut, PrintWriter consoleOut, String message) {
+        fileOut.println(message);
+        consoleOut.println(message);
+    }
+
+    // private static void memoryDumper(String message, int start, int size) {
+    //     try (
+    //         PrintWriter fileWriter = new PrintWriter(new FileWriter("memory_dump.txt"));
+    //         PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
+    //     ) {
+    //         dumpMemory(fileWriter, consoleWriter, message, 0, 50);
+    //         System.out.println("Memory dump written to memory_dump.txt");
+    //     } catch (IOException e) {
+    //         e.printStackTrace();
+    //     }
+    // }
+
+
+    // private static void dumpMemory(String message, int start, int size) {
+    //     System.out.println(message);
+    //     System.out.println("PC: " + PC + " | Clock: " + Clock);
+    //     System.out.println("PSR: " + PSR);
+    //     System.out.printf("%4s: ", "GPRs");
+    //     for(int i = 0; i < 8; i++) {
+    //         System.out.printf("%5s%d ", "GPR", i+1);
+    //     }
+    //     System.out.println();
+    //     System.out.printf("%4s ", " ");
+    //     for(int i = 0; i < GPRs.length; i++) {
+    //         System.out.printf("%6d ", GPRs[i]);
+    //     }
+    //     System.out.println();
+    //     System.out.printf("%4s ", " ");
+    //     for(int i = 0; i < 10; i++ ){
+    //         System.out.printf("%6s","------");
+    //     }
+    //     System.out.println();
+    //     for (int i = start; i < start + size && i < MEMORY_SIZE; i += 10) {
+    //         System.out.printf("%4d: ", i);
+    //         for (int j = 0; j < 10 && (i + j) < MEMORY_SIZE; j++) {
+    //             System.out.printf("%6d ", memory[i + j]);
+    //         }
+    //         System.out.println();
+    //     }
+    // }
+
+
 
     private static long[] fetchOperand(long OpMode, long OpGPR) {
         System.out.println("Hello! You are in fetchOperand()");
