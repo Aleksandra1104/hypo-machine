@@ -129,12 +129,7 @@ public class HypoMachine {
     }
 
     private static void executeArithmetic( char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR ) {
-        
-        // if(fetchOperand(Op1Mode, Op1GPR)[1] < 0 || fetchOperand(Op2Mode, Op2GPR)[1] < 0) {
-        //     PSR = -1;
-        //     System.out.println("Cant believe you are herererere");
-        //     return;
-        // }
+       
         long[] operand1 = new long[2];
         long[] operand2 = new long[2];
 
@@ -173,7 +168,7 @@ public class HypoMachine {
         }
 
         if(Op1Mode == 1) {
-            GPRs[(int)Op1GPR] = result;
+            GPRs[(int)Op1GPR - 1] = result;
         } else if (Op1Mode == 6) {
             System.err.println("Destination operand cannot be immediate value");
             PSR = -1;
@@ -191,7 +186,7 @@ public class HypoMachine {
         long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
 
         if(Op1Mode == 1) {
-            GPRs[(int) Op1GPR] = Op2Value;
+            GPRs[(int) Op1GPR - 1] = Op2Value;
         } else if(Op1Mode == 6){
             System.err.println("Error: Destination operand cannot be immediate value");
             PSR = -1;
@@ -215,7 +210,7 @@ public class HypoMachine {
         
 
         long Op1Value = fetchOperand(Op1Mode, Op1GPR)[1];
-        // long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
+        
 
         System.out.println("Inside executeBranchOnCondition after fetching Op1Value");
 
@@ -311,11 +306,11 @@ public class HypoMachine {
 
         switch((int)OpMode) {
             case 1: // Register Mode
-                OpValue = GPRs[(int)OpGPR];
+                OpValue = GPRs[(int)OpGPR - 1];
                 OpAddress = -1;
                 break;
             case 2: // Register Deferred Mode
-                OpAddress = GPRs[(int) OpGPR];
+                OpAddress = GPRs[(int) OpGPR - 1];
                 if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
                     OpValue = memory[(int) OpAddress];
                 } else {
@@ -326,7 +321,7 @@ public class HypoMachine {
                 }
                 break;
             case 3: // Autoincrement mode
-                OpAddress = GPRs[(int) OpGPR];
+                OpAddress = GPRs[(int) OpGPR - 1];
                 if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
                     OpValue = memory[(int) OpAddress];
                 } else {
@@ -335,10 +330,10 @@ public class HypoMachine {
                     operand[1] = -2;
                     return operand;
                 }
-                GPRs[(int) OpGPR]++;
+                GPRs[(int) OpGPR - 1]++;
                 break;
             case 4: // Autodecrement mode
-                OpAddress = --GPRs[(int) OpGPR];
+                OpAddress = --GPRs[(int) OpGPR - 1];
                 if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
                     OpValue = memory[(int) OpAddress];
                 } else {
