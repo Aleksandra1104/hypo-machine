@@ -1,41 +1,56 @@
+// Sasha Basova, Student ID: 301089119
+// Homework 1 2/9/2025
+// Hardware Simulator HYPO Machine
+// Implemented with Java
+// Performs: initialize, load an executable file into memory, execute program, output memory dump into console and basova-hw1_output.txt file
+// Error Codes: -1 if there is an error; 0 if there are no errors. Error status is stored in PSR
+// Return values: Only methods that return are absoluteLoader() which returns Long and fetchOperand() which return Long[]
+// Global variables for the class HypoMachine: memory, GPRs, MAR, MBR, IR, SP, PC, PSR, Clock
+// Constants: MEMORY_SIZE
+
 import java.io.*;
 import java.util.*;
+
 
 public class HypoMachine {
     // Memory and Registers
     private static final int MEMORY_SIZE = 10000;
-    private static long[] memory = new long[MEMORY_SIZE];
+    private static long[] memory = new long[MEMORY_SIZE]; // memory array of the length MEMORY_SIZE
     private static long[] GPRs = new long[8]; // General-purpose registers
-    private static long MAR, MBR, IR, SP, PC, PSR, Clock;
+    private static long MAR, MBR, IR, SP, PC, PSR, Clock;  // Special registers
 
     public static void main(String[] args) {
-
         try (
-            PrintWriter fileWriter = new PrintWriter(new FileWriter("memory_dump.txt"));
+            PrintWriter fileWriter = new PrintWriter(new FileWriter("basova-hw1_output.txt")); // FileWriter to output into basova-hw1_output.txt
             PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
         ) {
 
         initializeSystem();
-        Scanner scanner = new Scanner(System.in);
+        Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
         System.out.print("Enter executable file name: ");
         String fileName = scanner.nextLine();
-        long startAddress = absoluteLoader(fileName);
+        long startAddress = absoluteLoader(fileName); // Return value from absoluteLoader() is stored in startAddress, this is where the execution begins if StartAddress >= 0
         if (startAddress >= 0) {
-            PC = startAddress;
-            dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 100);
-            executeProgram();
-            
+            PC = startAddress; // PC is set to startAddress
+            dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 100); // Dump memory before the execution
+            executeProgram();  
         } 
        
-        dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100);
+        dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
         scanner.close();   
-        System.out.println("Memory dump written to memory_dump.txt");
+        System.out.println("Memory dump written to basova-hw1_output.txt");
         } catch (IOException e) {
             e.printStackTrace();
         }
         
     }
 
+    // Function: initializeSystem
+    // Tasks
+    //     Initializes array memory and array GPRs with 0s, initializes MAR, MBR, IR, PC, PSR, Clock to 0; initializes SP to 9999
+    // Input Parameters: None
+    // Output Parameters: None
+    // Return: void
     private static void initializeSystem() {
         Arrays.fill(memory, 0);
         Arrays.fill(GPRs, 0);
@@ -43,21 +58,27 @@ public class HypoMachine {
         SP = 9999;
     }
 
+    // Function: absoluteLoader
+    // Tasks
+    //     Reads from input file and loads the content into memory
+    // Input Parameters: fileName        Name of the executable file
+    // Return: Long     -1 if there is an error or start address if no error
+    // Error Invalid Instruction address, Error No end mark is found, Loading Error
     private static long absoluteLoader(String fileName) {
         try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
             String line;
             while ((line = br.readLine()) != null) {
-                String[] parts = line.trim().split("\\s+");
+                String[] parts = line.trim().split("\\s+"); // stores two parts of the string line into an array parts
                 if (parts.length == 2) {
-                    long address = Long.parseLong(parts[0]);
-                    long value = Long.parseLong(parts[1]);
+                    long address = Long.parseLong(parts[0]); // stores first element of array parts into Long address
+                    long value = Long.parseLong(parts[1]); // stores second element of parts into Long value
                     if (address < 0) return value; // End of program, return PC start
                     if (address >= MEMORY_SIZE) {
-                        PSR = -1;
+                        PSR = -1; // set PSR to error status -1
                         System.err.println("Error: Invalid Instruction Address");
                         return -1; // Invalid address
                     } 
-                    memory[(int) address] = value;
+                    memory[(int) address] = value; // stores value at the memory index which equals (int) address
                 }
             }
         } catch (IOException e) {
@@ -70,6 +91,13 @@ public class HypoMachine {
         return -1; // Error if no end marker
     }
 
+
+    // Function: executeProgram
+    // Tasks
+    //     While isToExecute is true, executes the instructions stored in memory. Determines opcode, Op1Mode, Op2Mode, Op1GPR, Op2GPR and runs execution according to opcode
+    // Input Parameters: none
+    // Return: void
+    // Error Invalid PC address, Error No end mark is found, Loading Error
     private static void executeProgram() {
         boolean isToExecute = true;
         while (isToExecute) {
@@ -77,24 +105,21 @@ public class HypoMachine {
                 System.err.println("Error: Invalid PC Address");
                 break;
             }
-            System.out.println("You are in the ExecuteProgram(). Next line of instruction.");
-            MAR = PC;
-            MBR = memory[(int) MAR];
-            IR = MBR;
-            PC++;
+            // System.out.println("You are in the ExecuteProgram(). Next line of instruction.");
+            MAR = PC; // Stores current PC value into MAR
+            MBR = memory[(int) MAR]; // Stores the value from the memory[(int) MAR] into MBR
+            IR = MBR; // Stores MBR value into IR
+            PC++; // increments PC
             long opcode = (IR / 10000);
             long Op1Mode = ((IR % 10000) / 1000);
             long Op1GPR = (((IR % 10000) % 1000) / 100);
             long Op2Mode = ((((IR % 10000) % 1000) % 100) / 10);
             long Op2GPR = ((((IR % 10000) % 1000) % 100) % 10);
-            System.out.println("opcode: " + opcode);
-            System.out.println("Op1Mode: " + Op1Mode);
-            System.out.println("Op1GPR: " + Op1GPR);
-            System.out.println("Op2Mode: " + Op2Mode);
-            System.out.println("Op2GPR: " + Op2GPR);
+
             switch ((int)opcode) {
                 case 0: // Halt
-                    isToExecute = false;
+                    isToExecute = false; // Stops while loop -> stops the execution 
+                    Clock += 12;
                     System.out.println("Program Halted");
                     break;
                 case 1: // Add
@@ -133,12 +158,19 @@ public class HypoMachine {
                 default:
                     System.err.println("Unknown Opcode: " + opcode);
                     PSR = -1;
-                    isToExecute = false;
+                    isToExecute = false; // Stops the execution
             }
-            Clock++;
+            
         }
     }
 
+
+    // Function: executeArithmetic
+    // Tasks
+    //     Executes Add, Subtract, Multiply, Divide according to the operator parameter
+    // Input Parameters: char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR
+    // Return: void
+    // Error: Division by Zero, Error: Invalid Operator, Error: Destination operand cannot be immediate value
     private static void executeArithmetic( char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR ) {
        
         long[] operand1 = new long[2];
@@ -153,42 +185,45 @@ public class HypoMachine {
         
         long result;
 
-        
-
-        System.out.println("You are in executeArithmetic() after fetching operands and checking that they are > 0");
+        // System.out.println("You are in executeArithmetic() after fetching operands and checking that they are > 0");
 
         if(Op2Value == 0 && operator == '/') {
             System.err.println("Error: Division by Zero");
             PSR = -1;
             return;
         }
-        System.out.println("Operator: " + operator);
+
         switch (operator) {
-            case '+': result = Op1Value + Op2Value; break;
-            case '-': result = Op1Value - Op2Value; break;
-            case '*': result = Op1Value * Op2Value; break;
-            case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0; break;
+            case '+': result = Op1Value + Op2Value; Clock += 3; break;
+            case '-': result = Op1Value - Op2Value; Clock += 3; break;
+            case '*': result = Op1Value * Op2Value; Clock += 6; break;
+            case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0; Clock += 6; break;
             default: 
                 System.err.println("Error: Invalid Operator");
                 PSR = -1;
                 return;
         }
 
-        System.out.println("Result: " + result);
+        // System.out.println("Result: " + result);
 
         if(Op1Mode == 1) {
-            GPRs[(int)Op1GPR - 1] = result;
+            GPRs[(int)Op1GPR - 1] = result; // If Op1Mode == 1, stores the result value into GPR
         } else if (Op1Mode == 6) {
             System.err.println("Destination operand cannot be immediate value");
             PSR = -1;
             return;
         } else {
-            memory[(int) Op1Address] = result;
+            memory[(int) Op1Address] = result; // All other values of Op1Mode (except 1 and 6) -> stores result into memory
         }
 
-      
     }
 
+    // Function: executeMove
+    // Tasks
+    //     Executes Move 
+    // Input Parameters: long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR
+    // Return: void
+    // Error: Destination operand cannot be immediate value
     private static void executeMove(long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR) {
         long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
         long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
@@ -203,8 +238,15 @@ public class HypoMachine {
         } else {
             memory[(int)Op1Address] = Op2Value;
         } 
+        Clock += 2;
     }
     
+    // Function: executeBranch
+    // Tasks
+    //     Executes Branch (Jump to the specified address in memory) 
+    // Input Parameters: none
+    // Return: void
+    // Error: Invalid Branch Address
     private static void executeBranch() {
         long branchAddr = memory[(int) PC++];
         if (branchAddr >= 0 && branchAddr < MEMORY_SIZE) {
@@ -213,17 +255,22 @@ public class HypoMachine {
             System.err.println("Error: Invalid Branch Address");
             PSR = -1;
         }
+        Clock += 2;
     }
 
+
+    // Function: executeBranchOnCondition
+    // Tasks
+    //     Executes Branch on Condition (Jump to the specified address in memory if the condition is met) 
+    // Input Parameters: long Op1Mode, long Op1GPR, java.util.function.LongPredicate condition
+    // Return: void
+    // Error: Invalid Memory Address
     private static void executeBranchOnCondition(long Op1Mode, long Op1GPR, java.util.function.LongPredicate condition) {
-        
 
         long Op1Value = fetchOperand(Op1Mode, Op1GPR)[1];
         
-
-        System.out.println("Inside executeBranchOnCondition after fetching Op1Value");
+        // System.out.println("Inside executeBranchOnCondition after fetching Op1Value");
         
-    
         long branchAddr = memory[(int) PC];
         if (branchAddr >= MEMORY_SIZE) {
             System.err.println("Error: Invalid Memory Address");
@@ -232,16 +279,21 @@ public class HypoMachine {
         }
        
         if (condition.test(Op1Value)) {
-            System.out.println("In the condition block");
             PC = branchAddr;
-            System.out.println("PC: " + PC);
         } else {
             PC++;
         }
-
+        Clock += 4;
         
     }
 
+
+    // Function: executePush
+    // Tasks
+    //     Adds element on top of the stack 
+    // Input Parameters: none
+    // Return: void
+    // Error: Invalid Memory Address, Error: Stack Overflow
     private static void executePush() {
         long address = memory[(int) PC];
         PC++;
@@ -258,9 +310,16 @@ public class HypoMachine {
         int addressToGetValueFrom = (int) address;
         int stackAddressToPushValueTo = (int) SP;
         memory[stackAddressToPushValueTo] = memory[addressToGetValueFrom];
-        SP--;
+        SP--; // stack grows downwards
+        Clock += 2;
     }
 
+    // Function: executePop
+    // Tasks
+    //     Removes the top element from the stack
+    // Input Parameters: none
+    // Return: void
+    // Error: Invalid Memory Address
     private static void executePop() {
         long address = memory[(int) PC++];
         if(address >= MEMORY_SIZE) {
@@ -272,14 +331,20 @@ public class HypoMachine {
         int addressToPutValueTo = (int) address;
         memory[addressToPutValueTo] = memory[stackAddressToPopValueFrom];
         SP++;
+        Clock += 2;
     }
 
 
 
+    // Function: dumpMemory
+    // Tasks
+    //     Dumps memory of the specified size into console and output file
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut, String message, int start, int size
+    // Return: void
     private static void dumpMemory(PrintWriter fileOut, PrintWriter consoleOut, String message, int start, int size) {
         // Print to both file and console
         printBoth(fileOut, consoleOut, message);
-        printBoth(fileOut, consoleOut, "PC: " + PC + " | Clock: " + Clock);
+        printBoth(fileOut, consoleOut, "PC: " + PC + " | Clock: " + Clock + " | SP: " + SP);
         printBoth(fileOut, consoleOut, "PSR: " + PSR);
         
         fileOut.printf("%4s: ", "GPRs");
@@ -326,54 +391,18 @@ public class HypoMachine {
         consoleOut.println(message);
     }
 
-    // private static void memoryDumper(String message, int start, int size) {
-    //     try (
-    //         PrintWriter fileWriter = new PrintWriter(new FileWriter("memory_dump.txt"));
-    //         PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
-    //     ) {
-    //         dumpMemory(fileWriter, consoleWriter, message, 0, 50);
-    //         System.out.println("Memory dump written to memory_dump.txt");
-    //     } catch (IOException e) {
-    //         e.printStackTrace();
-    //     }
-    // }
 
 
-    // private static void dumpMemory(String message, int start, int size) {
-    //     System.out.println(message);
-    //     System.out.println("PC: " + PC + " | Clock: " + Clock);
-    //     System.out.println("PSR: " + PSR);
-    //     System.out.printf("%4s: ", "GPRs");
-    //     for(int i = 0; i < 8; i++) {
-    //         System.out.printf("%5s%d ", "GPR", i+1);
-    //     }
-    //     System.out.println();
-    //     System.out.printf("%4s ", " ");
-    //     for(int i = 0; i < GPRs.length; i++) {
-    //         System.out.printf("%6d ", GPRs[i]);
-    //     }
-    //     System.out.println();
-    //     System.out.printf("%4s ", " ");
-    //     for(int i = 0; i < 10; i++ ){
-    //         System.out.printf("%6s","------");
-    //     }
-    //     System.out.println();
-    //     for (int i = start; i < start + size && i < MEMORY_SIZE; i += 10) {
-    //         System.out.printf("%4d: ", i);
-    //         for (int j = 0; j < 10 && (i + j) < MEMORY_SIZE; j++) {
-    //             System.out.printf("%6d ", memory[i + j]);
-    //         }
-    //         System.out.println();
-    //     }
-    // }
-
-
-
+     // Function: fetchOperand
+    // Tasks
+    //     fetches operand according to OpMode and OpGPR
+    // Input Parameters: long OpMode, long OpGPR
+    // Return: long[]
     private static long[] fetchOperand(long OpMode, long OpGPR) {
-        System.out.println("Hello! You are in fetchOperand()");
+        // System.out.println("You are in fetchOperand()");
         long OpAddress;
         long OpValue;
-        long[] operand = new long[2];
+        long[] operand = new long[2]; // creates an array to store operand's value and address
 
         if(((int) OpGPR) > 8 || ((int) OpGPR) < 0) {
             System.err.println("Error: Invalid GPR Address");
@@ -386,7 +415,6 @@ public class HypoMachine {
             case 1: // Register Mode
                 OpValue = GPRs[(int)OpGPR - 1];
                 OpAddress = -1;
-                
                 break;
             case 2: // Register Deferred Mode
                 OpAddress = GPRs[(int) OpGPR - 1];
@@ -423,28 +451,20 @@ public class HypoMachine {
                 }
                 break;
             case 5: // Direct Mode
-                System.out.println("You are in fetchOperand Mode 5");
-                System.out.println("PC: " + PC);
+                // System.out.println("You are in fetchOperand Mode 5");
                 OpAddress = memory[(int)PC++];
-                System.out.println("PC: " + PC);
-                System.out.println("OpMode: " + OpMode );
-                System.out.println("HEEEEY it's OpAddress!" + OpAddress);
                 if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
                     OpValue = memory[(int) OpAddress];
-                    System.out.println("HEEEEY it's OpValue!" + OpValue);
                 } else {
                     System.err.println("Error: Invalid Memory Address");
                     operand[0] = -2;
                     operand[1] = -2;
                     return operand;
                 }
-                System.out.println("You are about to break from switch in FetchOperand");
                 break;
             case 6: // Immediate Mode
-                System.out.println("You are in FetchOperand Immediate Mode 6");
-                System.out.println("PC: " + PC);
+                // System.out.println("You are in FetchOperand Immediate Mode 6");
                 OpValue = memory[(int) PC++];
-                System.out.println("OpValue: " + OpValue);
                 OpAddress = -1;
                 break;
             default: // Invalid Mode
@@ -456,7 +476,6 @@ public class HypoMachine {
 
         operand[0] = OpAddress;
         operand[1] = OpValue;
-        System.out.println("I am returning operand from fetchOperand()");
         return operand;
     }
 }

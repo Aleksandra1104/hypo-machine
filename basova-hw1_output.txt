@@ -1,5 +1,5 @@
 After Loading Program
-PC: 3 | Clock: 0
+PC: 3 | Clock: 0 | SP: 9999
 PSR: 0
 GPRs:   GPR1   GPR2   GPR3   GPR4   GPR5   GPR6   GPR7   GPR8 
           0      0      0      0      0      0      0      0 
@@ -15,7 +15,7 @@ GPRs:   GPR1   GPR2   GPR3   GPR4   GPR5   GPR6   GPR7   GPR8
   80:      0      0      0      0      0      0      0      0      0      0 
   90:      0      0      0      0      0      0      0      0      0      0 
 After Executing Program
-PC: 33 | Clock: 213
+PC: 33 | Clock: 697 | SP: 9999
 PSR: 0
 GPRs:   GPR1   GPR2   GPR3   GPR4   GPR5   GPR6   GPR7   GPR8 
         102   2550      0   -100      0      0      0      0 
