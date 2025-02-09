@@ -153,11 +153,7 @@ public class HypoMachine {
         
         long result;
 
-        if(Op1Value < 0 || Op2Value < 0) {
-            PSR = -1;
-            System.out.println("You are in IF block. Your Op1Value or Op2Value are less than 0");
-            return;
-        }
+        
 
         System.out.println("You are in executeArithmetic() after fetching operands and checking that they are > 0");
 
@@ -166,17 +162,19 @@ public class HypoMachine {
             PSR = -1;
             return;
         }
-
+        System.out.println("Operator: " + operator);
         switch (operator) {
             case '+': result = Op1Value + Op2Value; break;
             case '-': result = Op1Value - Op2Value; break;
             case '*': result = Op1Value * Op2Value; break;
-            case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0;
+            case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0; break;
             default: 
                 System.err.println("Error: Invalid Operator");
                 PSR = -1;
                 return;
         }
+
+        System.out.println("Result: " + result);
 
         if(Op1Mode == 1) {
             GPRs[(int)Op1GPR - 1] = result;
@@ -192,9 +190,9 @@ public class HypoMachine {
     }
 
     private static void executeMove(long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR) {
-        
-        long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
         long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
+        long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
+        
 
         if(Op1Mode == 1) {
             GPRs[(int) Op1GPR - 1] = Op2Value;
@@ -224,7 +222,7 @@ public class HypoMachine {
         
 
         System.out.println("Inside executeBranchOnCondition after fetching Op1Value");
-
+        
     
         long branchAddr = memory[(int) PC];
         if (branchAddr >= MEMORY_SIZE) {
@@ -234,7 +232,9 @@ public class HypoMachine {
         }
        
         if (condition.test(Op1Value)) {
+            System.out.println("In the condition block");
             PC = branchAddr;
+            System.out.println("PC: " + PC);
         } else {
             PC++;
         }
@@ -386,6 +386,7 @@ public class HypoMachine {
             case 1: // Register Mode
                 OpValue = GPRs[(int)OpGPR - 1];
                 OpAddress = -1;
+                
                 break;
             case 2: // Register Deferred Mode
                 OpAddress = GPRs[(int) OpGPR - 1];
