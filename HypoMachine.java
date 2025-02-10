@@ -3,7 +3,7 @@
 // Hardware Simulator HYPO Machine
 // Implemented with Java
 // Performs: initialize, load an executable file into memory, execute program, output memory dump into console and basova-hw1_output.txt file
-// Error Codes: -1 if there is an error; 0 if there are no errors. Error status is stored in PSR
+// Error Codes: -1 if there is an error; 0 if there are no errors. 
 // Return values: Only methods that return are absoluteLoader() which returns Long and fetchOperand() which return Long[]
 // Global variables for the class HypoMachine: memory, GPRs, MAR, MBR, IR, SP, PC, PSR, Clock
 // Constants: MEMORY_SIZE
@@ -74,7 +74,6 @@ public class HypoMachine {
                     long value = Long.parseLong(parts[1]); // stores second element of parts into Long value
                     if (address < 0) return value; // End of program, return PC start
                     if (address >= MEMORY_SIZE) {
-                        PSR = -1; // set PSR to error status -1
                         System.err.println("Error: Invalid Instruction Address");
                         return -1; // Invalid address
                     } 
@@ -83,10 +82,8 @@ public class HypoMachine {
             }
         } catch (IOException e) {
             System.err.println("Error loading file: " + e.getMessage());
-            PSR = -1;
             return -1;
         }
-        PSR = -1;
         System.err.println("Error: No End Marker Found");
         return -1; // Error if no end marker
     }
@@ -157,7 +154,6 @@ public class HypoMachine {
                     break;
                 default:
                     System.err.println("Unknown Opcode: " + opcode);
-                    PSR = -1;
                     isToExecute = false; // Stops the execution
             }
             
@@ -189,9 +185,9 @@ public class HypoMachine {
 
         if(Op2Value == 0 && operator == '/') {
             System.err.println("Error: Division by Zero");
-            PSR = -1;
             return;
         }
+
 
         switch (operator) {
             case '+': result = Op1Value + Op2Value; Clock += 3; break;
@@ -200,7 +196,6 @@ public class HypoMachine {
             case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0; Clock += 6; break;
             default: 
                 System.err.println("Error: Invalid Operator");
-                PSR = -1;
                 return;
         }
 
@@ -210,9 +205,12 @@ public class HypoMachine {
             GPRs[(int)Op1GPR - 1] = result; // If Op1Mode == 1, stores the result value into GPR
         } else if (Op1Mode == 6) {
             System.err.println("Destination operand cannot be immediate value");
-            PSR = -1;
             return;
         } else {
+            if(Op1Address < 0 ) {
+                System.err.println("Error: Invalid Operand Address");
+                return;
+            }
             memory[(int) Op1Address] = result; // All other values of Op1Mode (except 1 and 6) -> stores result into memory
         }
 
@@ -233,9 +231,12 @@ public class HypoMachine {
             GPRs[(int) Op1GPR - 1] = Op2Value;
         } else if(Op1Mode == 6){
             System.err.println("Error: Destination operand cannot be immediate value");
-            PSR = -1;
             return;
         } else {
+            if(Op1Address < 0 ) {
+                System.err.println("Error: Invalid Operand Address");
+                return;
+            }
             memory[(int)Op1Address] = Op2Value;
         } 
         Clock += 2;
@@ -253,7 +254,6 @@ public class HypoMachine {
             PC = branchAddr;
         } else {
             System.err.println("Error: Invalid Branch Address");
-            PSR = -1;
         }
         Clock += 2;
     }
@@ -272,9 +272,8 @@ public class HypoMachine {
         // System.out.println("Inside executeBranchOnCondition after fetching Op1Value");
         
         long branchAddr = memory[(int) PC];
-        if (branchAddr >= MEMORY_SIZE) {
+        if (branchAddr < 0 || branchAddr >= MEMORY_SIZE) {
             System.err.println("Error: Invalid Memory Address");
-            PSR = -1;
             return;
         }
        
@@ -297,14 +296,12 @@ public class HypoMachine {
     private static void executePush() {
         long address = memory[(int) PC];
         PC++;
-        if(address >= MEMORY_SIZE) {
+        if(address >= MEMORY_SIZE || address < 0) {
             System.err.println("Error: Invalid Memory Address");
-            PSR = -1;
             return;
         }
         if(SP <= 0) {
             System.err.println("Error: Stack Overflow");
-            PSR = -1;
             return;
         }
         int addressToGetValueFrom = (int) address;
@@ -322,9 +319,8 @@ public class HypoMachine {
     // Error: Invalid Memory Address
     private static void executePop() {
         long address = memory[(int) PC++];
-        if(address >= MEMORY_SIZE) {
+        if(address >= MEMORY_SIZE || address < 0) {
             System.err.println("Error: Invalid Memory Address");
-            PSR = -1;
             return;
         }
         int stackAddressToPopValueFrom = (int) SP;
