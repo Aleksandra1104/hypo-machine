@@ -19,8 +19,8 @@ public class HypoMachine {
     private static long[] GPRs = new long[8]; // General-purpose registers
     private static long MAR, MBR, IR, SP, PC, PSR, Clock;  // Special registers
     private static final long EndOfList = -3;
-    private static long OSFreeList; 
-    private static long UserFreeList;
+    private static long OSFreeList = EndOfList; 
+    private static long UserFreeList = EndOfList;
 
     public static void main(String[] args) {
         try (
@@ -42,7 +42,10 @@ public class HypoMachine {
         dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
         scanner.close();   
         System.out.println("Memory dump written to basova-hw1_output.txt");
-        System.out.println("Memory allocation");
+        System.out.println("User Free List Before Memory Allocation");
+        printFreeList(UserFreeList);
+    
+
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -61,8 +64,31 @@ public class HypoMachine {
         Arrays.fill(GPRs, 0);
         MAR = MBR = IR = PC = PSR = Clock = 0;
         SP = 9999;
-        OSFreeList = EndOfList;
-        UserFreeList = EndOfList;
+        UserFreeList = 3100;   // points to the address of the first free block 
+        memory[3100] = 4000;   // first user free block
+        memory[3001] = 200;
+
+        memory[4000] = 5300;    // second user free block
+        memory[4001] = 1000;
+
+        memory[5300] = 6000;    // third user free block
+        memory[5301] = 600;
+
+        memory[6000] = EndOfList;   // fourth user free block
+        memory[6001] = 500;
+
+        OSFreeList = 7100;
+        memory[7100] = 8000;    // first os free block
+        memory[7101] = 300;
+
+        memory[8000] = 8500;    // second os free block
+        memory[8001] = 400;
+
+        memory[8500] = 9000;    // third os free block
+        memory[8501] = 300;
+
+        memory[9000] = EndOfList;   // fourth os free block
+        memory[9001] = 600;
 
     }
 
@@ -393,6 +419,15 @@ public class HypoMachine {
     private static void printBoth(PrintWriter fileOut, PrintWriter consoleOut, String message) {
         fileOut.println(message);
         consoleOut.println(message);
+    }
+
+    private static void printFreeList(long start) {
+        long current = start; 
+        while(current != EndOfList) {
+            System.out.print("(Addr: " + current + ", Size: " + memory[(int)current + 1] + ") -> ");
+            current = memory[(int)current];
+        }
+        System.out.print("Null");
     }
 
 
