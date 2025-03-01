@@ -18,6 +18,9 @@ public class HypoMachine {
     private static long[] memory = new long[MEMORY_SIZE]; // memory array of the length MEMORY_SIZE
     private static long[] GPRs = new long[8]; // General-purpose registers
     private static long MAR, MBR, IR, SP, PC, PSR, Clock;  // Special registers
+    private static final long EndOfList = -3;
+    private static long OSFreeList; 
+    private static long UserFreeList;
 
     public static void main(String[] args) {
         try (
@@ -39,6 +42,8 @@ public class HypoMachine {
         dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
         scanner.close();   
         System.out.println("Memory dump written to basova-hw1_output.txt");
+        System.out.println("Memory allocation");
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -56,6 +61,9 @@ public class HypoMachine {
         Arrays.fill(GPRs, 0);
         MAR = MBR = IR = PC = PSR = Clock = 0;
         SP = 9999;
+        OSFreeList = EndOfList;
+        UserFreeList = EndOfList;
+
     }
 
     // Function: absoluteLoader
@@ -474,4 +482,167 @@ public class HypoMachine {
         operand[1] = OpValue;
         return operand;
     }
+
+    private static long allocateOSMemory(long requestedSize) {
+        long ErrorNoFreeMemory = -2;
+
+        if(OSFreeList == EndOfList) {
+            System.err.println("Error: No free memory available");
+            return ErrorNoFreeMemory;
+        }
+        if(requestedSize < 0) {
+            System.err.println("Error: Invalid requested size");
+            return -3;
+        }
+        if(requestedSize == 1) {
+            requestedSize = 2;
+        }
+
+        long currentPtr = OSFreeList;
+        long prevPtr = EndOfList;
+        
+        while(currentPtr != EndOfList) {
+            // Check each block in the linked list until block with requested memory size is found
+            if(memory[(int)currentPtr + 1] == requestedSize) {
+                if(currentPtr == OSFreeList) {  // if first block has the requested size
+                    OSFreeList = memory[(int)currentPtr];    // now OSFreeList points to the next free block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)prevPtr] = memory[(int)currentPtr]; //previous block points to a block after the current block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+
+            } else if (memory[(int)currentPtr + 1] > requestedSize) {   // found a block with size greater than requested size
+                if(currentPtr == OSFreeList) {  // if it's a first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    OSFreeList = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    memory[(int)prevPtr] = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+            } else {    // small block
+                prevPtr = currentPtr;
+                currentPtr = memory[(int)currentPtr]; // look at the next block
+            }
+        }
+
+        System.err.println("Error: No free block with enough memory is found");
+        return(ErrorNoFreeMemory);
+    }
+
+    private static long allocateUserMemory(long requestedSize) {
+        long ErrorNoFreeMemory = -2;
+
+        if(UserFreeList == EndOfList) {
+            System.err.println("Error: No free memory available");
+            return ErrorNoFreeMemory;
+        }
+        if(requestedSize < 0) {
+            System.err.println("Error: Invalid requested size");
+            return -3;
+        }
+        if(requestedSize == 1) {
+            requestedSize = 2;
+        }
+
+        long currentPtr = UserFreeList;
+        long prevPtr = EndOfList;
+        
+        while(currentPtr != EndOfList) {
+            // Check each block in the linked list until block with requested memory size is found
+            if(memory[(int)currentPtr + 1] == requestedSize) {
+                if(currentPtr == UserFreeList) {  // if first block has the requested size
+                    UserFreeList = memory[(int)currentPtr];    // now OSFreeList points to the next free block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)prevPtr] = memory[(int)currentPtr]; //previous block points to a block after the current block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+
+            } else if (memory[(int)currentPtr + 1] > requestedSize) {   // found a block with size greater than requested size
+                if(currentPtr == UserFreeList) {  // if it's a first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    UserFreeList = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    memory[(int)prevPtr] = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+            } else {    // small block
+                prevPtr = currentPtr;
+                currentPtr = memory[(int)currentPtr]; // look at the next block
+            }
+        }
+
+        System.err.println("Error: No free block with enough memory is found");
+        return(ErrorNoFreeMemory);
+    }
+
+    private static String freeOSMemory(long ptr, long size) {
+        int returnCode = 1;
+        if(ptr < 7000 || ptr > 9999) {
+            System.err.println("Error: The address is outside OS free memory");
+            returnCode = -2;
+        }
+        if(size == 1) {
+            size = 2;
+        }
+        if(size < 1 || (ptr + size) >= 9999 ) {
+            System.err.println("Error: Invalid size or memory address");
+            returnCode = -3;
+        }
+
+        memory[(int)ptr] = OSFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+        memory[(int)ptr + 1] = size;
+        OSFreeList = ptr;
+
+
+        if(returnCode > 0) {
+            return "OK";
+        } else {
+            return "Error";
+        }
+    }
+
+    private static String freeUserMemory(long ptr, long size) {
+        int returnCode = 1;
+        if(ptr < 3000 || ptr > 6999 ) {
+            System.err.println("Error: The address is outside User free memory");
+            returnCode = -2;
+        }
+        if(size == 1) {
+            size = 2;
+        }
+        if(size < 1 || (ptr + size) >= 6999 ) {
+            System.err.println("Error: Invalid size or memory address");
+            returnCode = -3;
+        }
+
+        memory[(int)ptr] = UserFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+        memory[(int)ptr + 1] = size;
+        UserFreeList = ptr;
+
+
+        if(returnCode > 0) {
+            return "OK";
+        } else {
+            return "Error";
+        }
+    }
 }
+ 
