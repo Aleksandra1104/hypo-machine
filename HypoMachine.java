@@ -43,9 +43,72 @@ public class HypoMachine {
         scanner.close();   
         System.out.println("Memory dump written to basova-hw1_output.txt");
         System.out.println("User Free List Before Memory Allocation");
+        long allocatedMemoryAddr = -6;
         printFreeList(UserFreeList);
-    
+        
+        System.out.println("Case 1: Allocate entire first block and free it.");
+        allocatedMemoryAddr = allocateUserMemory(200);
+        System.out.println("Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 200);
+        System.out.println("User Free List after allocation: ");
+        printFreeList(UserFreeList);
+        freeUserMemory(allocatedMemoryAddr, 200);
+        System.out.println("User Free List after freeing memory:");
+        printFreeList(UserFreeList);
+        System.out.println();
 
+        System.out.println("Case 2: Allocate part of the first free block and free it.");
+        allocatedMemoryAddr = allocateUserMemory(100);
+        System.out.println("Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 100);
+        System.out.println("User Free List after allocation: ");
+        printFreeList(UserFreeList);
+        freeUserMemory(allocatedMemoryAddr, 100);
+        System.out.println("User Free List after freeing memory:");
+        printFreeList(UserFreeList);
+        System.out.println();
+
+        System.out.println("Case 3: Allocate part of a free block in the middle of the list and free it");
+        allocatedMemoryAddr = allocateUserMemory(400);
+        System.out.println("Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 400);
+        System.out.println("User Free List after allocation: ");
+        printFreeList(UserFreeList);
+        freeUserMemory(allocatedMemoryAddr, 400);
+        System.out.println("User Free List after freeing memory:");
+        printFreeList(UserFreeList);
+        System.out.println();
+
+        System.out.println("Case 4: Allocate entire free block in the middle of the list and free it");
+        allocatedMemoryAddr = allocateUserMemory(700);
+        System.out.println("Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 700);
+        System.out.println("User Free List after allocation: ");
+        printFreeList(UserFreeList);
+        freeUserMemory(allocatedMemoryAddr, 700);
+        System.out.println("User Free List after freeing memory:");
+        printFreeList(UserFreeList);
+        System.out.println();
+
+        System.out.println("Case 5: Allocate part of the last free block and free it");
+        allocatedMemoryAddr = allocateUserMemory(1000);
+        System.out.println("Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 1000);
+        System.out.println("User Free List after allocation: ");
+        printFreeList(UserFreeList);
+        freeUserMemory(allocatedMemoryAddr, 1000);
+        System.out.println("User Free List after freeing memory:");
+        printFreeList(UserFreeList);
+        System.out.println();
+
+        System.out.println("Case 6: Allocate the entire last free block and free it");
+        allocatedMemoryAddr = allocateUserMemory(1400);
+        System.out.println("Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 1400);
+        System.out.println("User Free List after allocation: ");
+        printFreeList(UserFreeList);
+        freeUserMemory(allocatedMemoryAddr, 1400);
+        System.out.println("User Free List after freeing memory:");
+        printFreeList(UserFreeList);
+        System.out.println();
+
+        System.out.println("Case 6: Allocate the block bigger than all the free blocks and print the error message");
+        allocatedMemoryAddr = allocateUserMemory(2000);
+        
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -66,16 +129,16 @@ public class HypoMachine {
         SP = 9999;
         UserFreeList = 3100;   // points to the address of the first free block 
         memory[3100] = 4000;   // first user free block
-        memory[3001] = 200;
+        memory[3101] = 200;
 
-        memory[4000] = 5300;    // second user free block
-        memory[4001] = 1000;
+        memory[4000] = 5000;    // second user free block
+        memory[4001] = 700;
 
-        memory[5300] = 6000;    // third user free block
-        memory[5301] = 600;
+        memory[5000] = 5500;    // third user free block
+        memory[5001] = 300;
 
-        memory[6000] = EndOfList;   // fourth user free block
-        memory[6001] = 500;
+        memory[5500] = EndOfList;   // fourth user free block
+        memory[5501] = 1400;
 
         OSFreeList = 7100;
         memory[7100] = 8000;    // first os free block
@@ -427,7 +490,7 @@ public class HypoMachine {
             System.out.print("(Addr: " + current + ", Size: " + memory[(int)current + 1] + ") -> ");
             current = memory[(int)current];
         }
-        System.out.print("Null");
+        System.out.println("Null");
     }
 
 
@@ -642,9 +705,40 @@ public class HypoMachine {
             returnCode = -3;
         }
 
-        memory[(int)ptr] = OSFreeList; // inserted free block points to the next free block ( that used to be the first free block)
-        memory[(int)ptr + 1] = size;
-        OSFreeList = ptr;
+        if(ptr < OSFreeList) {
+
+            if(ptr + size == OSFreeList){
+                memory[(int)ptr] = memory[(int)OSFreeList];
+                memory[(int)ptr + 1] = size + memory[(int)OSFreeList + 1];
+                OSFreeList = ptr;
+            } else {
+                memory[(int)ptr] = OSFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+                memory[(int)ptr + 1] = size;
+                OSFreeList = ptr;
+            }
+
+        } else {
+            long currentAddr = OSFreeList;
+            while(ptr > memory[(int)currentAddr] ){
+                currentAddr = memory[(int)currentAddr];
+                if (memory[(int)currentAddr] < 0) {
+                    break;
+                }
+            }
+            
+            if(ptr + size == memory[(int)currentAddr]) {
+                memory[(int)ptr] = memory[(int)memory[(int)currentAddr]];
+                memory[(int)ptr + 1] = size + memory[(int)memory[(int)currentAddr] + 1];
+                memory[(int)currentAddr] = ptr;
+                System.out.println("Merge success!");
+            } else {
+                memory[(int)ptr] = memory[(int)currentAddr];
+                memory[(int)ptr + 1] = size;
+                memory[(int)currentAddr] = ptr;
+            }
+
+        }
+
 
 
         if(returnCode > 0) {
@@ -668,9 +762,46 @@ public class HypoMachine {
             returnCode = -3;
         }
 
-        memory[(int)ptr] = UserFreeList; // inserted free block points to the next free block ( that used to be the first free block)
-        memory[(int)ptr + 1] = size;
-        UserFreeList = ptr;
+            
+            if(ptr < UserFreeList) {
+
+                if(ptr + size == UserFreeList){
+                    memory[(int)ptr] = memory[(int)UserFreeList];
+                    memory[(int)ptr + 1] = size + memory[(int)UserFreeList + 1];
+                    UserFreeList = ptr;
+                } else {
+                    memory[(int)ptr] = UserFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+                    memory[(int)ptr + 1] = size;
+                    UserFreeList = ptr;
+                }
+
+            } else {
+                long currentAddr = UserFreeList;
+                while(ptr > memory[(int)currentAddr] ){
+                    currentAddr = memory[(int)currentAddr];
+                    if (memory[(int)currentAddr] < 0) {
+                        break;
+                    }
+                }
+                
+                if(ptr + size == memory[(int)currentAddr]) {
+                    memory[(int)ptr] = memory[(int)memory[(int)currentAddr]];
+                    memory[(int)ptr + 1] = size + memory[(int)memory[(int)currentAddr] + 1];
+                    memory[(int)currentAddr] = ptr;
+                    System.out.println("Merge success!");
+                } else {
+                    memory[(int)ptr] = memory[(int)currentAddr];
+                    memory[(int)ptr + 1] = size;
+                    memory[(int)currentAddr] = ptr;
+                }
+
+            }
+
+            
+        
+            // memory[(int)ptr] = UserFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+            // memory[(int)ptr + 1] = size;
+            // UserFreeList = ptr;
 
 
         if(returnCode > 0) {
