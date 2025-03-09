@@ -1,0 +1,48 @@
+User Free List Before Memory Allocation
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+Case 1: Allocate entire first block and free it.
+Allocated Memory Address: 3100, Size: 200
+User Free List after allocation:
+(Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+User Free List after freeing memory:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+
+Case 2: Allocate part of the first free block and free it.
+Allocated Memory Address: 3100, Size: 100
+User Free List after allocation:
+(Addr: 3200, Size: 100) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+User Free List after freeing memory:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+
+Case 3: Allocate part of a free block in the middle of the list and free it
+Allocated Memory Address: 4000, Size: 400
+User Free List after allocation:
+(Addr: 3100, Size: 200) -> (Addr: 4400, Size: 300) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+Merge success!
+User Free List after freeing memory:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+
+Case 4: Allocate entire free block in the middle of the list and free it
+Allocated Memory Address: 4000, Size: 700
+User Free List after allocation: 
+(Addr: 3100, Size: 200) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+User Free List after freeing memory:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+
+Case 5: Allocate part of the last free block and free it
+Allocated Memory Address: 5500, Size: 1000
+User Free List after allocation:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 6500, Size: 400) -> Null
+Merge success!
+User Free List after freeing memory:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+
+Case 6: Allocate the entire last free block and free it
+Allocated Memory Address: 5500, Size: 1400
+User Free List after allocation:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> Null
+User Free List after freeing memory:
+(Addr: 3100, Size: 200) -> (Addr: 4000, Size: 700) -> (Addr: 5000, Size: 300) -> (Addr: 5500, Size: 1400) -> Null
+
+Case 7: Allocate the block bigger than all the free blocks and print the error message
+Error: No free block with enough memory is found

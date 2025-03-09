@@ -115,7 +115,7 @@ public class HypoMachine {
         printFreeList(UserFreeList);
         System.out.println();
 
-        System.out.println("Case 6: Allocate the block bigger than all the free blocks and print the error message");
+        System.out.println("Case 7: Allocate the block bigger than all the free blocks and print the error message");
         allocatedMemoryAddr = allocateUserMemory(2000);
         
 
