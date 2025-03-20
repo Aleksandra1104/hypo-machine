@@ -923,5 +923,76 @@ public class HypoMachine {
             System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
         }
     }
+
+    private static long printQueue(long Qptr) {
+        // print each PCB as you move from one PCB to the next
+
+        long OKstatus = 1;
+
+        long currentPCBptr = Qptr;
+
+        if(currentPCBptr == EndOfList) {
+            System.out.println("Queue is empty.");
+            return OKstatus;
+        }
+
+        // walk through the queue
+        while(currentPCBptr != EndOfList) {
+            printPCB(currentPCBptr);
+            currentPCBptr = memory[(int)currentPCBptr];
+        }
+
+        return OKstatus;
+    }
+
+    private static long insertIntoRQ(long PCBptr) {
+        // Insert PCB according to Priority Round Robin algorithm
+        // Use priority field in PCB to find the correct place to insert
+
+        long errorCode = -1;
+        long successCode = 1;
+
+        long previousPtr = EndOfList;
+        long currentPtr = RQ;
+
+        // Check for invalid PCB memory address
+        if((PCBptr < 0) || (PCBptr > MEMORY_SIZE - 1)) {
+            System.err.println("Error: Invalid PCB memory address.");
+            return errorCode;
+        }
+
+        memory[(int)PCBptr + 2] = ReadyState;
+        memory[(int)PCBptr] = EndOfList;
+
+        if(RQ == EndOfList) {   //Ready Queue is empty
+            RQ = PCBptr;
+            return successCode;
+        }
+
+        // Walk through Ready Queue and find the place to insert
+        while(currentPtr != EndOfList) {
+            if(memory[(int)PCBptr + 4] > memory[(int)currentPtr + 4]) {
+                if(previousPtr == EndOfList) {
+                    // enter PCB in the front of the list as the first entry
+                    memory[(int)PCBptr] = RQ;
+                    RQ = PCBptr;
+                    return successCode;
+                }
+                // enter in the middle of the list
+                memory[(int)PCBptr] = memory[(int)previousPtr];
+                memory[(int)previousPtr] = PCBptr;
+                return successCode;
+            } else {
+                // PCB to be inserted has lower or equal priority to the current PCB in RQ
+                // Go to the next PCB in Ready Queue
+                previousPtr = currentPtr;
+                currentPtr = memory[(int)currentPtr];
+            }
+        } 
+
+        // Insert PCB in the end of the Ready Queue
+        memory[(int)previousPtr] = PCBptr;
+        return successCode;
+    }
 }
  
