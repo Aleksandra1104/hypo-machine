@@ -27,6 +27,13 @@ public class HypoMachine {
     private static final long EndOfList = -3;
     private static long OSFreeList = EndOfList; 
     private static long UserFreeList = EndOfList;
+    private static long RQ = EndOfList; // Ready Queue set to empty list
+    private static long PCBsize = 18;
+    private static long ProcessID = 1;
+    private static final long DefaultPriority = 128;
+    private static final long ReadyState = 1;
+    private static final long StackSize = 10;
+
 
     public static void main(String[] args) {
         try (
@@ -835,6 +842,85 @@ public class HypoMachine {
             return "OK";
         } else {
             return "Error";
+        }
+    }
+
+    private static long createProcess(String filename, long priority) {
+
+        long errorCode = -2;
+        long successCode = 1;
+
+        // Allocate space for Process Control Block in OS Free List
+        long PCBptr = allocateOSMemory(PCBsize);
+        if(PCBptr < 0) {
+            return errorCode;
+        }
+
+        // Initialize PCB
+        initializePCB(PCBptr);
+
+        // Load the program into memory using AbsoluteLoader
+        long PCvalue = absoluteLoader(filename);
+        if(PCvalue < 0) {
+            return errorCode;
+        }
+
+        // Store PC value into PC field in the PCB
+        memory[(int)PCBptr + 16] = PCvalue;
+
+        // Allocate stack space from user free list
+        long ptr = allocateUserMemory(StackSize);
+        if(ptr < 0) {
+            freeOSMemory(PCBptr, PCBsize);
+            return errorCode;
+        }
+
+        // Store stack info in the PCB - SP, stack start address and stack size
+        memory[(int)PCBptr + 15] = ptr + StackSize;
+        memory[(int)PCBptr + 5] = ptr;
+        memory[(int)PCBptr + 6] = StackSize;
+        
+        // Set priority in the PCB to parameter priority
+        memory[(int)PCBptr + 4] = priority;
+
+        // Print PCB passing PCBptr 
+        printPCB(PCBptr);
+
+        
+        // Insert PCB into Ready Queue passing PCBptr  (!!!! TO BE IMPLEMENTED !!!)
+
+        return successCode;
+
+
+    }
+
+    private static void initializePCB(long PCBptr) {
+        // Set entire PCB area to 0 using PCBptr
+        for (int i = 0; i < (int) PCBsize; i++) {
+            memory[(int)PCBptr + i] = 0;
+        }
+
+        // Allocate PID and set it in the PCB
+        memory[(int)PCBptr + 1] = ProcessID++;
+
+        // ReadyState is a constant set to 1
+        memory[(int)PCBptr + 2] = ReadyState;
+
+        // DefaultPriority is a constant set to 128
+        memory[(int)PCBptr + 4] = DefaultPriority;
+
+        // Set next PCB pointer to EndOfList
+        memory[(int)PCBptr ] = EndOfList;
+
+    }
+
+    private static void printPCB(long PCBptr) {
+        System.out.printf("Process Control Block %l%n", memory[(int)PCBptr + 1]);
+        System.out.printf("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
+        int count = 0;
+        for(int i = 7; i <= 14; i++) {
+            count++;
+            System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
         }
     }
 }
