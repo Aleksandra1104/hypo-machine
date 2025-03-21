@@ -28,10 +28,13 @@ public class HypoMachine {
     private static long OSFreeList = EndOfList; 
     private static long UserFreeList = EndOfList;
     private static long RQ = EndOfList; // Ready Queue set to empty list
+    private static long WQ = EndOfList; // Waiting Queue set to empty list
     private static long PCBsize = 18;
     private static long ProcessID = 1;
     private static final long DefaultPriority = 128;
+    private static final long CreatedState = 0;
     private static final long ReadyState = 1;
+    private static final long WaitingState = 2;
     private static final long StackSize = 10;
 
 
@@ -887,7 +890,11 @@ public class HypoMachine {
         printPCB(PCBptr);
 
         
-        // Insert PCB into Ready Queue passing PCBptr  (!!!! TO BE IMPLEMENTED !!!)
+        // Insert PCB into Ready Queue passing PCBptr 
+        long statusQueue = insertIntoRQ(PCBptr);
+        if(statusQueue < 0) {
+            return errorCode;
+        }
 
         return successCode;
 
@@ -903,8 +910,8 @@ public class HypoMachine {
         // Allocate PID and set it in the PCB
         memory[(int)PCBptr + 1] = ProcessID++;
 
-        // ReadyState is a constant set to 1
-        memory[(int)PCBptr + 2] = ReadyState;
+        // CreatedState is a constant set to 0
+        memory[(int)PCBptr + 2] = CreatedState;
 
         // DefaultPriority is a constant set to 128
         memory[(int)PCBptr + 4] = DefaultPriority;
@@ -992,6 +999,111 @@ public class HypoMachine {
 
         // Insert PCB in the end of the Ready Queue
         memory[(int)previousPtr] = PCBptr;
+        return successCode;
+    }
+
+    private static long insertIntoWQ(long PCBptr) {
+        // Insert the given PCB at the front of the Waiting Queue
+        long errorCode = -1;
+        long successCode = 1;
+
+        // Check for invalid PCB memory address
+        if((PCBptr < 0) || (PCBptr > MEMORY_SIZE - 1)) {
+            System.err.println("Error: Invalid PCB memory address.");
+            return errorCode;
+        }
+
+        memory[(int)PCBptr + 2] = WaitingState; // Waiting state = 2
+        memory[(int)PCBptr] = WQ;
+
+        WQ = PCBptr;
+
+        return successCode;
+
+    }
+
+    private static long searchAndRemovePCBfromWQ(long pid) {
+        long currentPCBptr = WQ;
+        long previousPCBptr = EndOfList;
+
+        // Search Waiting Queue for a PCB that has the given pid
+        // If match is found, remove it from Waiting Queue and return PCB pointer
+        while(currentPCBptr != EndOfList) {
+            if(memory[(int)currentPCBptr + 1] == pid) {
+                // match found, remove from waiting queue
+                if(previousPCBptr == EndOfList) {
+                    // first PCB
+                    WQ = memory[(int)currentPCBptr];
+                } else {
+                    // not first PCB
+                    memory[(int)previousPCBptr] = memory[(int)currentPCBptr];
+                }
+
+                memory[(int)currentPCBptr] = EndOfList;
+                return(currentPCBptr);
+            }
+            previousPCBptr = currentPCBptr;
+            currentPCBptr = memory[(int)currentPCBptr];
+        }
+
+        // No matching PCB is found. Display pid message and return EndOfList
+        System.err.println("No PCB matching given pid is found in Waiting Queue.");
+        return EndOfList;
+    }
+
+    private static long searchAndRemovePCBfromRQ(long pid) {
+        long currentPCBptr = RQ;
+        long previousPCBptr = EndOfList;
+
+        // Search Ready Queue for a PCB that has the given pid
+        // If match is found, remove it from Ready Queue and return PCB pointer
+        while(currentPCBptr != EndOfList) {
+            if(memory[(int)currentPCBptr + 1] == pid) {
+                // match found, remove from ready queue
+                if(previousPCBptr == EndOfList) {
+                    // first PCB
+                    RQ = memory[(int)currentPCBptr];
+                } else {
+                    // not first PCB
+                    memory[(int)previousPCBptr] = memory[(int)currentPCBptr];
+                }
+
+                memory[(int)currentPCBptr] = EndOfList;
+                return(currentPCBptr);
+            }
+            previousPCBptr = currentPCBptr;
+            currentPCBptr = memory[(int)currentPCBptr];
+        }
+
+        // No matching PCB is found. Display pid message and return EndOfList
+        System.err.println("No PCB matching given pid is found in Ready Queue.");
+        return EndOfList;
+    }
+
+    private static long terminateProcess(long PCBptr) {
+        long errorCode = -1;
+        long successCode = 1;
+
+        // return PCB memory using the PCBptr and PCBsize
+        String statusOS = freeOSMemory(PCBptr, PCBsize);
+        if(statusOS == "Error") {
+            System.err.println("Error: Freeing OS memory failed.");
+            return errorCode;
+        }
+
+        // return stack memory using stack start address and stack size in the given PCB
+        String statusUser = freeUserMemory(memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
+        if(statusUser == "Error") {
+            System.err.println("Error: Freeing User memory failed.");
+            return errorCode;
+        }
+
+        // remove PCB from Ready Queue
+        searchAndRemovePCBfromRQ(memory[(int)PCBptr + 1]);
+
+        // remove PCB from Waiting Queue
+        searchAndRemovePCBfromWQ(memory[(int)PCBptr + 1]);
+        
         return successCode;
     }
 }
