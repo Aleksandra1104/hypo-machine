@@ -43,7 +43,7 @@ public class HypoMachine3 {
 
     public static void main(String[] args) {
         try (
-            PrintWriter fileWriter = new PrintWriter(new FileWriter("basova-hw1_output.txt")); // FileWriter to output into basova-hw1_output.txt
+            PrintWriter fileWriter = new PrintWriter(new FileWriter("basova-hw3_output.txt")); // FileWriter to output into basova-hw1_output.txt
             PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
         ) {
 
@@ -60,8 +60,21 @@ public class HypoMachine3 {
        
         dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
         scanner.close();   
-        System.out.println("Memory dump written to basova-hw1_output.txt");
+        System.out.println("Memory dump written to basova-hw3_output.txt");
         
+        // Testing printList method
+        printList(UserFreeList, fileWriter, consoleWriter);
+        printBoth(fileWriter, consoleWriter, "Case 1: Allocate entire first block and free it.");
+        long allocatedMemoryAddr = allocateUserMemory(200);
+        printBoth(fileWriter, consoleWriter, "Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 200);
+        printBoth(fileWriter, consoleWriter, "User Free List after allocation: ");
+        printList(UserFreeList, fileWriter, consoleWriter);
+        freeUserMemory(allocatedMemoryAddr, 200);
+        printBoth(fileWriter, consoleWriter, "User Free List after freeing memory:");
+        printList(UserFreeList, fileWriter, consoleWriter);
+        printBoth(fileWriter, consoleWriter, "");
+        // End of printList testing
+
         
 
         } catch (IOException e) {
@@ -470,13 +483,15 @@ public class HypoMachine3 {
         consoleOut.println(message);
     }
 
-    private static void printFreeList(long start) {
+    private static void printList(long start, PrintWriter fileOut, PrintWriter consoleOut) {
         long current = start; 
+        String list = "";
         while(current != EndOfList) {
-            System.out.print("(Addr: " + current + ", Size: " + memory[(int)current + 1] + ") -> ");
+            list += "(Addr: " + current + ", Size: " + memory[(int)current + 1] + ") -> ";
             current = memory[(int)current];
         }
-        System.out.println("Null");
+        list += "Null";
+        printBoth(fileOut, consoleOut, list);
     }
 
 
@@ -815,7 +830,7 @@ public class HypoMachine3 {
         }
     }
 
-    private static long createProcess(String filename, long priority) {
+    private static long createProcess(String filename, long priority, PrintWriter fileOut, PrintWriter consoleOut) {
 
         long errorCode = -2;
         long successCode = 1;
@@ -854,7 +869,7 @@ public class HypoMachine3 {
         memory[(int)PCBptr + 4] = priority;
 
         // Print PCB passing PCBptr 
-        printPCB(PCBptr);
+        printPCB(PCBptr, fileOut, consoleOut);
 
         
         // Insert PCB into Ready Queue passing PCBptr 
@@ -888,17 +903,22 @@ public class HypoMachine3 {
 
     }
 
-    private static void printPCB(long PCBptr) {
-        System.out.printf("Process Control Block %l%n", memory[(int)PCBptr + 1]);
-        System.out.printf("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
+    private static void printPCB(long PCBptr, PrintWriter fileOut, PrintWriter consoleOut) {
+        String pcb = "";
+        pcb = String.format("Process Control Block %l%n", memory[(int)PCBptr + 1]);
+        pcb += String.format("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n\", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]");
+        // System.out.printf("Process Control Block %l%n", memory[(int)PCBptr + 1]);
+        // System.out.printf("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
         int count = 0;
         for(int i = 7; i <= 14; i++) {
             count++;
-            System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
+            // System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
+            pcb += String.format("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
         }
+        printBoth(fileOut, consoleOut, pcb);
     }
 
-    private static long printQueue(long Qptr) {
+    private static long printQueue(long Qptr, PrintWriter fileOut, PrintWriter consoleOut) {
         // print each PCB as you move from one PCB to the next
 
         long OKstatus = 1;
@@ -912,7 +932,7 @@ public class HypoMachine3 {
 
         // walk through the queue
         while(currentPCBptr != EndOfList) {
-            printPCB(currentPCBptr);
+            printPCB(currentPCBptr, fileOut, consoleOut);
             currentPCBptr = memory[(int)currentPCBptr];
         }
 
