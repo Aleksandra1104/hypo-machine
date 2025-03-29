@@ -47,20 +47,43 @@ public class HypoMachine3 {
             PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
         ) {
 
-        initializeSystem();
+
+        String[] filenames = new String[1];
+        int count = 0;
         Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
-        System.out.print("Enter executable file name: ");
-        String fileName = scanner.nextLine();
-        long startAddress = absoluteLoader(fileName); // Return value from absoluteLoader() is stored in startAddress, this is where the execution begins if StartAddress >= 0
-        if (startAddress >= 0) {
-            PC = startAddress; // PC is set to startAddress
-            dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 100); // Dump memory before the execution
-            executeProgram();  
-        } 
+        String fileName = "";
+        boolean exitLoop = false;
+        while(count < 1 && !exitLoop) {
+            System.out.print("Enter executable file name or 'exit' to exit input field: ");
+            fileName = scanner.nextLine();
+            if(fileName.equals("exit")) {
+                scanner.close();
+                return;
+            }
+            if(fileName.length() > 0) {
+                filenames[count] = fileName;
+                count++;
+            } else {
+                System.out.println("Executable file length must be greater than 0");
+            }
+        }
+        scanner.close();
+        // Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
+        // System.out.print("Enter executable file name: ");
+        // String fileName = scanner.nextLine();
+        initializeSystem(filenames, fileWriter, consoleWriter);
+        dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 10000); // Dump memory before the execution
+
+        // long startAddress = absoluteLoader(fileName); // Return value from absoluteLoader() is stored in startAddress, this is where the execution begins if StartAddress >= 0
+        // if (startAddress >= 0) {
+        //     PC = startAddress; // PC is set to startAddress
+        //     dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 100); // Dump memory before the execution
+        //     executeProgram();  
+        // } 
        
-        dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
-        scanner.close();   
-        System.out.println("Memory dump written to basova-hw3_output.txt");
+        // dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
+        // scanner.close();   
+        // System.out.println("Memory dump written to basova-hw3_output.txt");
         
         // Testing printList method
         printList(UserFreeList, fileWriter, consoleWriter);
@@ -89,7 +112,7 @@ public class HypoMachine3 {
     // Input Parameters: None
     // Output Parameters: None
     // Return: void
-    private static void initializeSystem() {
+    private static void initializeSystem(String[] filenames, PrintWriter fileOut, PrintWriter consoleOut) {
         Arrays.fill(memory, 0);
         Arrays.fill(GPRs, 0);
         MAR = MBR = IR = PC = PSR = Clock = 0;
@@ -119,6 +142,12 @@ public class HypoMachine3 {
 
         memory[9000] = EndOfList;   // fourth os free block
         memory[9001] = 600;
+
+        // Create null process and user processes
+        createProcess("null-process.txt", 0, fileOut, consoleOut);
+        for(int i = 0; i < filenames.length; i++) {
+            createProcess(filenames[i], DefaultPriority, fileOut, consoleOut);
+        }
 
     }
 
@@ -905,15 +934,15 @@ public class HypoMachine3 {
 
     private static void printPCB(long PCBptr, PrintWriter fileOut, PrintWriter consoleOut) {
         String pcb = "";
-        pcb = String.format("Process Control Block %l%n", memory[(int)PCBptr + 1]);
-        pcb += String.format("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n\", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]");
+        pcb = String.format("Process Control Block %d%n", memory[(int)PCBptr + 1]);
+        pcb += String.format("PCB address = %d, Next PCB Ptr = %d, PID = %d, State = %d, PC = %d, SP = %d, %nPriority = %d, Stack Info: start address = %d, size = %d%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
         // System.out.printf("Process Control Block %l%n", memory[(int)PCBptr + 1]);
         // System.out.printf("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
         int count = 0;
         for(int i = 7; i <= 14; i++) {
             count++;
             // System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
-            pcb += String.format("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
+            pcb += String.format("GPR %d: %d%n", count, memory[(int)PCBptr + i]);
         }
         printBoth(fileOut, consoleOut, pcb);
     }
