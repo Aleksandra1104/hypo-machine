@@ -6,7 +6,7 @@
 // Error Codes: -1 if there is an error; 0 if there are no errors. 
 // Return values: Only methods that return are absoluteLoader() which returns Long and fetchOperand() which return Long[]
 // Global variables for the class HypoMachine: memory, GPRs, MAR, MBR, IR, SP, PC, PSR, Clock, UserFreeList, OSFreeList
-// Constants: MEMORY_SIZE, EndOfList
+// Constants: MEMORY_SIZE, EndOfList, DefaultPriority, CreatedState, ReadyState, WaitingState, StackSize, UserMode, OSMode, Timeslice
 
 //Homework 2 3/9/2025 
 // Team: Sasha Basova and Maxwell Whelan
@@ -41,6 +41,7 @@ public class HypoMachine3 {
     private static final long Timeslice = 100;
 
 
+    // Updated both by Sasha Basova and Maxwell Whelan
     public static void main(String[] args) {
         try (
             PrintWriter fileWriter = new PrintWriter(new FileWriter("basova-hw3_output.txt")); // FileWriter to output into basova-hw1_output.txt
@@ -70,13 +71,18 @@ public class HypoMachine3 {
         }
         scanner.close();
         
-        initializeSystem(filenames, fileWriter, consoleWriter);
+        initializeSystem(fileWriter, consoleWriter);
+
+        for(int i = 0; i < filenames.length; i++) {
+            createProcess(filenames[i], DefaultPriority, fileWriter, consoleWriter);
+        }
+
         dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000); // Dump memory before the execution
 
         while(!shutdown) {
 
             printBoth(fileWriter, consoleWriter, "Ready Queue Before CPU scheduling");
-            printList(RQ, fileWriter, consoleWriter);
+            printQueue(RQ, fileWriter, consoleWriter);
 
             dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 2999);
             
@@ -86,7 +92,7 @@ public class HypoMachine3 {
             dispatcher(PCBptr);     // Restore CPU context using dispatcher
 
             printBoth(fileWriter, consoleWriter, "Ready Queue After selecting process from RQ");
-            printList(RQ, fileWriter, consoleWriter);
+            printQueue(RQ, fileWriter, consoleWriter);
 
             printPCB(PCBptr, fileWriter, consoleWriter);
     
@@ -96,10 +102,18 @@ public class HypoMachine3 {
     
             if(status == 2) {
                 saveContext(PCBptr);
-                insertIntoRQ(PCBptr);
+                long statusCode = insertIntoRQ(PCBptr);
+                if(statusCode < 0) {
+                    System.err.println("Error: Error occurred while insering the process into Ready Queue");
+                    return;
+                }
                 memory[(int)PCBptr] = EndOfList;
             } else if(status == 1 || status < 0) {
-                terminateProcess(PCBptr);
+                long terminationCode = terminateProcess(PCBptr);
+                if(terminationCode < 0) {
+                    System.err.println("Error: Error occurred while terminating the process");
+                    return;
+                }
                 memory[(int)PCBptr] = EndOfList;
             } else {
                 System.err.println("Unknown error occurred.");
@@ -135,10 +149,11 @@ public class HypoMachine3 {
     // Function: initializeSystem
     // Tasks
     //     Initializes array memory and array GPRs with 0s, initializes MAR, MBR, IR, PC, PSR, Clock to 0; initializes SP to 9999
-    // Input Parameters: None
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
     // Output Parameters: None
     // Return: void
-    private static void initializeSystem(String[] filenames, PrintWriter fileOut, PrintWriter consoleOut) {
+    // Updated by Maxwell Whelan
+    private static void initializeSystem(PrintWriter fileOut, PrintWriter consoleOut) {
         Arrays.fill(memory, 0);
         Arrays.fill(GPRs, 0);
         MAR = MBR = IR = PC = PSR = Clock = 0;
@@ -171,9 +186,7 @@ public class HypoMachine3 {
 
         // Create null process and user processes
         createProcess("null-process.txt", 0, fileOut, consoleOut);
-        for(int i = 0; i < filenames.length; i++) {
-            createProcess(filenames[i], DefaultPriority, fileOut, consoleOut);
-        }
+        executeProgram();   // execute null process
 
     }
 
@@ -212,8 +225,9 @@ public class HypoMachine3 {
     // Tasks
     //     While isToExecute is true, executes the instructions stored in memory. Determines opcode, Op1Mode, Op2Mode, Op1GPR, Op2GPR and runs execution according to opcode
     // Input Parameters: none
-    // Return: void
+    // Return: 1 (program completed and halted), 2 (time slice expired), -1(error)
     // Error Invalid PC address, Error No end mark is found, Loading Error
+    // Updated by Sasha Basova
     private static long executeProgram() {
         boolean isToExecute = true;
         long timeLeft = Timeslice;
@@ -538,6 +552,12 @@ public class HypoMachine3 {
         consoleOut.println(message);
     }
 
+
+    // Function: printList
+    // Tasks: outputs OS/User Free List into output file and console
+    // Input Parameters: long start, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
     private static void printList(long start, PrintWriter fileOut, PrintWriter consoleOut) {
         long current = start; 
         String list = "";
@@ -885,6 +905,12 @@ public class HypoMachine3 {
         }
     }
 
+    // Function: createProcess
+    // Tasks: creates a process by allocating OS memory for a PCB, initializing PCB, loading the program into dynamic memory, inserting PCB into Ready Queue
+    // Input Parameters: String filename, long priority, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: 1 (success), or -2 (error)
+    // Error codes: -2 
+    // Written by Sasha Basova
     private static long createProcess(String filename, long priority, PrintWriter fileOut, PrintWriter consoleOut) {
 
         long errorCode = -2;
@@ -938,6 +964,11 @@ public class HypoMachine3 {
 
     }
 
+    // Function: initializePCB
+    // Tasks: Initializes PCB by setting PID to ProcessID, state to CreatedState (0), priority to DefaultPriority 128, next PCB pointer to EndOfList, CPU context to 0s
+    // Input Parameters: long PCBptr
+    // Return: void
+    // Written by Sasha Basova
     private static void initializePCB(long PCBptr) {
         // Set entire PCB area to 0 using PCBptr
         for (int i = 0; i < (int) PCBsize; i++) {
@@ -958,6 +989,11 @@ public class HypoMachine3 {
 
     }
 
+    // Function: printPCB
+    // Tasks: outputs PCB both into output file and console using printBoth method
+    // Input Parameters: long PCBptr, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
     private static void printPCB(long PCBptr, PrintWriter fileOut, PrintWriter consoleOut) {
         String pcb = "";
         pcb = String.format("Process Control Block %d%n", memory[(int)PCBptr + 1]);
@@ -973,16 +1009,19 @@ public class HypoMachine3 {
         printBoth(fileOut, consoleOut, pcb);
     }
 
-    private static long printQueue(long Qptr, PrintWriter fileOut, PrintWriter consoleOut) {
+    // Function: pprintQueue
+    // Tasks: outputs Ready/Waiting Queue both into output file and console using printPCB method
+    // Input Parameters: long Qptr, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void printQueue(long Qptr, PrintWriter fileOut, PrintWriter consoleOut) {
+
         // print each PCB as you move from one PCB to the next
-
-        long OKstatus = 1;
-
         long currentPCBptr = Qptr;
 
         if(currentPCBptr == EndOfList) {
             System.out.println("Queue is empty.");
-            return OKstatus;
+            return;
         }
 
         // walk through the queue
@@ -990,10 +1029,10 @@ public class HypoMachine3 {
             printPCB(currentPCBptr, fileOut, consoleOut);
             currentPCBptr = memory[(int)currentPCBptr];
         }
-
-        return OKstatus;
     }
 
+
+    // Written by Maxwell Whelan
     private static long insertIntoRQ(long PCBptr) {
         // Insert PCB according to Priority Round Robin algorithm
         // Use priority field in PCB to find the correct place to insert
@@ -1044,6 +1083,7 @@ public class HypoMachine3 {
         return successCode;
     }
 
+    // Written by Maxwell Whelan
     private static long insertIntoWQ(long PCBptr) {
         // Insert the given PCB at the front of the Waiting Queue
         long errorCode = -1;
@@ -1064,6 +1104,7 @@ public class HypoMachine3 {
 
     }
 
+    // Written by Maxwell Whelan
     private static long searchAndRemovePCBfromWQ(long pid) {
         long currentPCBptr = WQ;
         long previousPCBptr = EndOfList;
@@ -1093,6 +1134,7 @@ public class HypoMachine3 {
         return EndOfList;
     }
 
+    // Written by Maxwell Whelan
     private static long searchAndRemovePCBfromRQ(long pid) {
         long currentPCBptr = RQ;
         long previousPCBptr = EndOfList;
@@ -1122,6 +1164,12 @@ public class HypoMachine3 {
         return EndOfList;
     }
 
+    // Function: terminateProcess
+    // Tasks: terminates process by removing it from OS memory, freeing stack, removing the PCB from all the queues
+    // Input Parameters: long PCBptr
+    // Return: 1 (if success), -1 (if error)
+    // Error code: -1
+    // Written by Sasha Basova
     private static long terminateProcess(long PCBptr) {
         long errorCode = -1;
         long successCode = 1;
@@ -1149,6 +1197,7 @@ public class HypoMachine3 {
         return successCode;
     }
 
+    // Written by Maxwell Whelan
     private static long selectProcessFromRQ() {
         long PCBptr = RQ;   // first entry in Ready Queue
 
@@ -1163,6 +1212,11 @@ public class HypoMachine3 {
         return(PCBptr);
     }
 
+    // Function: saveContext
+    // Tasks: saves CPU context to PCB
+    // Input Parameters: long PCBptr
+    // Return: void
+    // Written by Sasha Basova
     private static void saveContext(long PCBptr) {
         // Assume PCBptr is a valid pointer
 
@@ -1179,6 +1233,11 @@ public class HypoMachine3 {
 
     }
 
+     // Function: dispatcher
+    // Tasks: restores CPU context from PCB
+    // Input Parameters: long PCBptr
+    // Return: void
+    // Written by Sasha Basova
     private static void dispatcher(long PCBptr) {
         // Assume PCBptr is a valid pointer
         
