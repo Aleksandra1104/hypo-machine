@@ -38,7 +38,7 @@ public class HypoMachine3 {
     private static final long StackSize = 10;
     private static final long UserMode = 2;
     private static final long OSMode = 1;
-    private static final long Timeslice = 100;
+    private static final long Timeslice = 200;
 
 
     // Updated both by Sasha Basova and Maxwell Whelan
@@ -104,7 +104,7 @@ public class HypoMachine3 {
                 saveContext(PCBptr);
                 long statusCode = insertIntoRQ(PCBptr);
                 if(statusCode < 0) {
-                    System.err.println("Error: Error occurred while insering the process into Ready Queue");
+                    System.err.println("Error: Error occurred while inserting the process into Ready Queue");
                     return;
                 }
                 memory[(int)PCBptr] = EndOfList;
@@ -323,6 +323,7 @@ public class HypoMachine3 {
         }
 
         if(timeLeft < 0) {
+            System.out.println("Time slice expired");
             return timeSliceExpiredStatus;
         } else if(status == "Halted"){
             return haltStatus;
@@ -950,6 +951,7 @@ public class HypoMachine3 {
         memory[(int)PCBptr + 4] = priority;
 
         // Print PCB passing PCBptr 
+        printBoth(fileOut, consoleOut, "Process successfully created");
         printPCB(PCBptr, fileOut, consoleOut);
 
         
@@ -1020,7 +1022,7 @@ public class HypoMachine3 {
         long currentPCBptr = Qptr;
 
         if(currentPCBptr == EndOfList) {
-            System.out.println("Queue is empty.");
+            printBoth(fileOut, consoleOut, "Queue is empty");
             return;
         }
 
@@ -1029,6 +1031,7 @@ public class HypoMachine3 {
             printPCB(currentPCBptr, fileOut, consoleOut);
             currentPCBptr = memory[(int)currentPCBptr];
         }
+        printBoth(fileOut, consoleOut, "End of Queue");
     }
 
 
@@ -1165,7 +1168,7 @@ public class HypoMachine3 {
     }
 
     // Function: terminateProcess
-    // Tasks: terminates process by removing it from OS memory, freeing stack, removing the PCB from all the queues
+    // Tasks: terminates process by removing it from OS memory, freeing stack
     // Input Parameters: long PCBptr
     // Return: 1 (if success), -1 (if error)
     // Error code: -1
@@ -1187,12 +1190,6 @@ public class HypoMachine3 {
             System.err.println("Error: Freeing User memory failed.");
             return errorCode;
         }
-
-        // remove PCB from Ready Queue
-        searchAndRemovePCBfromRQ(memory[(int)PCBptr + 1]);
-
-        // remove PCB from Waiting Queue
-        searchAndRemovePCBfromWQ(memory[(int)PCBptr + 1]);
         
         return successCode;
     }
