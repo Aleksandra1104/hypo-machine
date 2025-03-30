@@ -53,6 +53,7 @@ public class HypoMachine3 {
         Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
         String fileName = "";
         boolean exitLoop = false;
+        boolean shutdown = false;
         while(count < 1 && !exitLoop) {
             System.out.print("Enter executable file name or 'exit' to exit input field: ");
             fileName = scanner.nextLine();
@@ -68,34 +69,59 @@ public class HypoMachine3 {
             }
         }
         scanner.close();
-        // Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
-        // System.out.print("Enter executable file name: ");
-        // String fileName = scanner.nextLine();
+        
         initializeSystem(filenames, fileWriter, consoleWriter);
-        dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 10000); // Dump memory before the execution
+        dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000); // Dump memory before the execution
 
-        // long startAddress = absoluteLoader(fileName); // Return value from absoluteLoader() is stored in startAddress, this is where the execution begins if StartAddress >= 0
-        // if (startAddress >= 0) {
-        //     PC = startAddress; // PC is set to startAddress
-        //     dumpMemory(fileWriter, consoleWriter, "After Loading Program", 0, 100); // Dump memory before the execution
-        //     executeProgram();  
-        // } 
-       
-        // dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 100); // Dump memory after execution
-        // scanner.close();   
-        // System.out.println("Memory dump written to basova-hw3_output.txt");
+        while(!shutdown) {
+
+            printBoth(fileWriter, consoleWriter, "Ready Queue Before CPU scheduling");
+            printList(RQ, fileWriter, consoleWriter);
+
+            dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 2999);
+            
+
+            long PCBptr = selectProcessFromRQ();    // Select next process from RQ to give CPU
+
+            dispatcher(PCBptr);     // Restore CPU context using dispatcher
+
+            printBoth(fileWriter, consoleWriter, "Ready Queue After selecting process from RQ");
+            printList(RQ, fileWriter, consoleWriter);
+
+            printPCB(PCBptr, fileWriter, consoleWriter);
+    
+            long status = executeProgram();     // Execute instructions of the running process using CPU
+    
+            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 2999);  // Dump dynamic memory
+    
+            if(status == 2) {
+                saveContext(PCBptr);
+                insertIntoRQ(PCBptr);
+                memory[(int)PCBptr] = EndOfList;
+            } else if(status == 1 || status < 0) {
+                terminateProcess(PCBptr);
+                memory[(int)PCBptr] = EndOfList;
+            } else {
+                System.err.println("Unknown error occurred.");
+                return;
+            }
+
+            if(RQ == EndOfList) {
+                shutdown = true;
+            }
+        }
         
         // Testing printList method
-        printList(UserFreeList, fileWriter, consoleWriter);
-        printBoth(fileWriter, consoleWriter, "Case 1: Allocate entire first block and free it.");
-        long allocatedMemoryAddr = allocateUserMemory(200);
-        printBoth(fileWriter, consoleWriter, "Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 200);
-        printBoth(fileWriter, consoleWriter, "User Free List after allocation: ");
-        printList(UserFreeList, fileWriter, consoleWriter);
-        freeUserMemory(allocatedMemoryAddr, 200);
-        printBoth(fileWriter, consoleWriter, "User Free List after freeing memory:");
-        printList(UserFreeList, fileWriter, consoleWriter);
-        printBoth(fileWriter, consoleWriter, "");
+        // printList(UserFreeList, fileWriter, consoleWriter);
+        // printBoth(fileWriter, consoleWriter, "Case 1: Allocate entire first block and free it.");
+        // long allocatedMemoryAddr = allocateUserMemory(200);
+        // printBoth(fileWriter, consoleWriter, "Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 200);
+        // printBoth(fileWriter, consoleWriter, "User Free List after allocation: ");
+        // printList(UserFreeList, fileWriter, consoleWriter);
+        // freeUserMemory(allocatedMemoryAddr, 200);
+        // printBoth(fileWriter, consoleWriter, "User Free List after freeing memory:");
+        // printList(UserFreeList, fileWriter, consoleWriter);
+        // printBoth(fileWriter, consoleWriter, "");
         // End of printList testing
 
         
