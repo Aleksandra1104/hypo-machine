@@ -14,6 +14,12 @@
 // Functions written by Sasha Basova: freeOSMemory(), freeUserMemory() and 1 - 4 test cases
 // Functions written by Maxwell Whelan: allocateOSMemory(), allocateUserMemory() and 5 - 7 test cases
 
+//Homework 3  4/5/2025
+// Team: Sasha Basova and Maxwell Whelan
+// Process management. Updated main, initialize and executeProgram functions to test process management. Three user processes are created (from three ML files) and one OS process (null process) is always running if there is no other processes in the ready queue
+// Functions implemented by Sasha: createProcess, initializePCB, printPCB, printQueue, terminateProcess, saveContext, dispatcher
+// Functions implemented by Maxwell: insertIntoRQ, insertIntoWQ, searchAndRemovePCBfromWQ, searchAndRemovePCBfromRQ, selectProcessFromRQ 
+
 import java.io.*;
 import java.util.*;
 
@@ -49,13 +55,13 @@ public class HypoMachine3 {
         ) {
 
 
-        String[] filenames = new String[1];
+        String[] filenames = new String[2];
         int count = 0;
         Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
         String fileName = "";
         boolean exitLoop = false;
         boolean shutdown = false;
-        while(count < 1 && !exitLoop) {
+        while(count < 2 && !exitLoop) {
             System.out.print("Enter executable file name or 'exit' to exit input field: ");
             fileName = scanner.nextLine();
             if(fileName.equals("exit")) {
@@ -72,19 +78,22 @@ public class HypoMachine3 {
         scanner.close();
         
         initializeSystem(fileWriter, consoleWriter);
+        printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
         for(int i = 0; i < filenames.length; i++) {
             createProcess(filenames[i], DefaultPriority, fileWriter, consoleWriter);
         }
 
         dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000); // Dump memory before the execution
+        printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
         while(!shutdown) {
 
             printBoth(fileWriter, consoleWriter, "Ready Queue Before CPU scheduling");
             printQueue(RQ, fileWriter, consoleWriter);
+            printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
-            dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 2999);
+            dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 400);
             
 
             long PCBptr = selectProcessFromRQ();    // Select next process from RQ to give CPU
@@ -93,23 +102,27 @@ public class HypoMachine3 {
 
             printBoth(fileWriter, consoleWriter, "Ready Queue After selecting process from RQ");
             printQueue(RQ, fileWriter, consoleWriter);
+            printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
             printPCB(PCBptr, fileWriter, consoleWriter);
     
             long status = executeProgram();     // Execute instructions of the running process using CPU
-    
-            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 2999);  // Dump dynamic memory
+            printBoth(fileWriter, consoleWriter, "status after execution: " + status);
+
+            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 400);  // Dump dynamic memory
     
             if(status == 2) {
                 saveContext(PCBptr);
-                long statusCode = insertIntoRQ(PCBptr);
+                long statusCode = insertIntoRQ(PCBptr, fileWriter, consoleWriter);
                 if(statusCode < 0) {
                     System.err.println("Error: Error occurred while inserting the process into Ready Queue");
                     return;
                 }
-                memory[(int)PCBptr] = EndOfList;
+                // memory[(int)PCBptr] = EndOfList;
             } else if(status == 1 || status < 0) {
                 long terminationCode = terminateProcess(PCBptr);
+                printBoth(fileWriter, consoleWriter, "Process" + PCBptr + "is terminated");
+                dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000);
                 if(terminationCode < 0) {
                     System.err.println("Error: Error occurred while terminating the process");
                     return;
@@ -186,7 +199,7 @@ public class HypoMachine3 {
 
         // Create null process and user processes
         createProcess("null-process.txt", 0, fileOut, consoleOut);
-        executeProgram();   // execute null process
+        // executeProgram();   // execute null process
 
     }
 
@@ -234,6 +247,7 @@ public class HypoMachine3 {
         long haltStatus = 1;
         long timeSliceExpiredStatus = 2;
         long errorStatus = -1;
+        long unknownStatus = -5;
         String status = "";
         
 
@@ -322,13 +336,17 @@ public class HypoMachine3 {
             
         }
 
-        if(timeLeft < 0) {
+        System.out.println("Time left: " + timeLeft);
+        if(timeLeft <= 0) {
             System.out.println("Time slice expired");
             return timeSliceExpiredStatus;
         } else if(status == "Halted"){
+            System.out.println("Time left: " + timeLeft);
             return haltStatus;
-        } else {
+        } else if(status == "Error"){
             return errorStatus;
+        } else {
+            return unknownStatus;
         }
     }
 
@@ -816,11 +834,10 @@ public class HypoMachine3 {
 
         } else {        // insert the free block into the Linked List where it belongs according to its address
             long currentAddr = OSFreeList;
-            while(ptr > memory[(int)currentAddr] ){
+            System.out.println("OSFreeList points to: " + OSFreeList);
+            while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] > 0){
+                System.out.println("Current address: " + currentAddr);
                 currentAddr = memory[(int)currentAddr];
-                if (memory[(int)currentAddr] < 0) {
-                    break;
-                }
             }
             
             if(ptr + size == memory[(int)currentAddr]) {    // merge if the neighbor blocks intersect
@@ -878,11 +895,9 @@ public class HypoMachine3 {
 
             } else {    // insert the free block into the Linked List where it belonged
                 long currentAddr = UserFreeList;
-                while(ptr > memory[(int)currentAddr] ){
+                while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] > 0){
                     currentAddr = memory[(int)currentAddr];
-                    if (memory[(int)currentAddr] < 0) {
-                        break;
-                    }
+                    
                 }
                 
                 if(ptr + size == memory[(int)currentAddr]) {    // merge if the neighbor blocks intersect
@@ -956,10 +971,13 @@ public class HypoMachine3 {
 
         
         // Insert PCB into Ready Queue passing PCBptr 
-        long statusQueue = insertIntoRQ(PCBptr);
+        long statusQueue = insertIntoRQ(PCBptr, fileOut, consoleOut);
         if(statusQueue < 0) {
             return errorCode;
         }
+        printBoth(fileOut, consoleOut, "Process successfully added to RQ");
+        printPCB(PCBptr, fileOut, consoleOut);
+        printBoth(fileOut, consoleOut, "RQ: " + RQ);
 
         return successCode;
 
@@ -1036,7 +1054,7 @@ public class HypoMachine3 {
 
 
     // Written by Maxwell Whelan
-    private static long insertIntoRQ(long PCBptr) {
+    private static long insertIntoRQ(long PCBptr, PrintWriter fileOut, PrintWriter consoleOut) {
         // Insert PCB according to Priority Round Robin algorithm
         // Use priority field in PCB to find the correct place to insert
 
@@ -1053,7 +1071,7 @@ public class HypoMachine3 {
         }
 
         memory[(int)PCBptr + 2] = ReadyState;
-        memory[(int)PCBptr] = EndOfList;
+        // memory[(int)PCBptr] = EndOfList;
 
         if(RQ == EndOfList) {   //Ready Queue is empty
             RQ = PCBptr;
@@ -1070,8 +1088,11 @@ public class HypoMachine3 {
                     return successCode;
                 }
                 // enter in the middle of the list
-                memory[(int)PCBptr] = memory[(int)previousPtr];
+                printBoth(fileOut, consoleOut, "previousPtr: " + previousPtr);
+                printBoth(fileOut, consoleOut, "currentPtr: " + currentPtr);
+                memory[(int)PCBptr] = currentPtr;
                 memory[(int)previousPtr] = PCBptr;
+                printPCB(PCBptr, fileOut, consoleOut);
                 return successCode;
             } else {
                 // PCB to be inserted has lower or equal priority to the current PCB in RQ
@@ -1086,6 +1107,7 @@ public class HypoMachine3 {
         return successCode;
     }
 
+    
     // Written by Maxwell Whelan
     private static long insertIntoWQ(long PCBptr) {
         // Insert the given PCB at the front of the Waiting Queue
@@ -1178,6 +1200,7 @@ public class HypoMachine3 {
         long successCode = 1;
 
         // return PCB memory using the PCBptr and PCBsize
+        System.out.println("PCBptr before freeing OS memory: " + PCBptr);
         String statusOS = freeOSMemory(PCBptr, PCBsize);
         if(statusOS == "Error") {
             System.err.println("Error: Freeing OS memory failed.");
