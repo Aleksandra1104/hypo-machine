@@ -55,13 +55,13 @@ public class HypoMachine3 {
         ) {
 
 
-        String[] filenames = new String[2];
+        String[] filenames = new String[3];
         int count = 0;
         Scanner scanner = new Scanner(System.in);  // Scanner to read from input file
         String fileName = "";
         boolean exitLoop = false;
         boolean shutdown = false;
-        while(count < 2 && !exitLoop) {
+        while(count < 3 && !exitLoop) {
             System.out.print("Enter executable file name or 'exit' to exit input field: ");
             fileName = scanner.nextLine();
             if(fileName.equals("exit")) {
@@ -78,14 +78,13 @@ public class HypoMachine3 {
         scanner.close();
         
         initializeSystem(fileWriter, consoleWriter);
-        printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
+        
 
         for(int i = 0; i < filenames.length; i++) {
             createProcess(filenames[i], DefaultPriority, fileWriter, consoleWriter);
         }
 
         dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000); // Dump memory before the execution
-        printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
         while(!shutdown) {
 
@@ -93,7 +92,7 @@ public class HypoMachine3 {
             printQueue(RQ, fileWriter, consoleWriter);
             printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
-            dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 400);
+            dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 500);
             
 
             long PCBptr = selectProcessFromRQ();    // Select next process from RQ to give CPU
@@ -107,9 +106,9 @@ public class HypoMachine3 {
             printPCB(PCBptr, fileWriter, consoleWriter);
     
             long status = executeProgram();     // Execute instructions of the running process using CPU
-            printBoth(fileWriter, consoleWriter, "status after execution: " + status);
+            printBoth(fileWriter, consoleWriter, "Status after execution: " + status);
 
-            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 400);  // Dump dynamic memory
+            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 500);  // Dump dynamic memory
     
             if(status == 2) {
                 saveContext(PCBptr);
@@ -121,8 +120,8 @@ public class HypoMachine3 {
                 // memory[(int)PCBptr] = EndOfList;
             } else if(status == 1 || status < 0) {
                 long terminationCode = terminateProcess(PCBptr);
-                printBoth(fileWriter, consoleWriter, "Process" + PCBptr + "is terminated");
-                dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000);
+                printBoth(fileWriter, consoleWriter, "Process " + PCBptr + " is terminated");
+                
                 if(terminationCode < 0) {
                     System.err.println("Error: Error occurred while terminating the process");
                     return;
@@ -1088,11 +1087,10 @@ public class HypoMachine3 {
                     return successCode;
                 }
                 // enter in the middle of the list
-                printBoth(fileOut, consoleOut, "previousPtr: " + previousPtr);
-                printBoth(fileOut, consoleOut, "currentPtr: " + currentPtr);
+                // printBoth(fileOut, consoleOut, "previousPtr: " + previousPtr);
+                // printBoth(fileOut, consoleOut, "currentPtr: " + currentPtr);
                 memory[(int)PCBptr] = currentPtr;
                 memory[(int)previousPtr] = PCBptr;
-                printPCB(PCBptr, fileOut, consoleOut);
                 return successCode;
             } else {
                 // PCB to be inserted has lower or equal priority to the current PCB in RQ
