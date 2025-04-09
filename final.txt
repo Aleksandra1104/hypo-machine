@@ -37,6 +37,7 @@ public class HypoMachine3 {
     private static long WQ = EndOfList; // Waiting Queue set to empty list
     private static long PCBsize = 18;
     private static long ProcessID = 1;
+    private static long ioPID = EndOfList;      // PID of the process waiting for I/O operation
     private static boolean shutdown = false;
     private static final long DefaultPriority = 128;
     private static final long CreatedState = 0;
@@ -45,7 +46,7 @@ public class HypoMachine3 {
     private static final long StackSize = 10;
     private static final long UserMode = 2;
     private static final long OSMode = 1;
-    private static final long Timeslice = 400;
+    private static final long Timeslice = 200;
     private static final long io_getc = 8;
     private static final long io_putc = 9;
     private static final long inputEvent = 3;   // 0 – no interrupt, 1 – run program, 2 – shutdown system,  3 – Input operation completion (io_getc), 4 – Output operation completion (io_putc)
@@ -61,18 +62,39 @@ public class HypoMachine3 {
         ) {
 
 
+        String[] filenames = new String[3];
+        int count = 0;
         Scanner scanner = new Scanner(System.in);  // Scanner to read from input 
+        String fileName = "";
+        boolean exitLoop = false;
+        while(count < 3 && !exitLoop) {
+            System.out.print("Enter executable file name or 'exit' to exit input field: ");
+            fileName = scanner.nextLine();
+            if(fileName.equals("exit")) {
+                scanner.close();
+                return;
+            }
+            if(fileName.length() > 0) {
+                filenames[count] = fileName;
+                count++;
+            } else {
+                System.out.println("Executable file length must be greater than 0");
+            }
+        }
+        scanner.close();
+        
         initializeSystem(fileWriter, consoleWriter);
         
-        // for(int i = 0; i < filenames.length; i++) {
-        //     createProcess(filenames[i], DefaultPriority, fileWriter, consoleWriter);
-        // }
 
-        dumpMemory(fileWriter, consoleWriter, "After Initializing System", 0, 10000); // Dump memory before the execution
+        for(int i = 0; i < filenames.length; i++) {
+            createProcess(filenames[i], DefaultPriority, fileWriter, consoleWriter);
+        }
+
+        dumpMemory(fileWriter, consoleWriter, "After Loading Programs", 0, 10000); // Dump memory before the execution
 
         while(!shutdown) {
 
-            checkAndProcessInterrupt(scanner, fileWriter, consoleWriter);
+            checkAndProcessInterrupt(fileWriter, consoleWriter);
 
             if(shutdown) {
                 return;
@@ -91,10 +113,8 @@ public class HypoMachine3 {
 
             printBoth(fileWriter, consoleWriter, "Ready Queue After selecting process from RQ");
             printQueue(RQ, fileWriter, consoleWriter);
-        
-            printBoth(fileWriter, consoleWriter, "\nRQ: " + RQ + "\n");
+            printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
-            printBoth(fileWriter, consoleWriter, "Selected process to be given CPU:");
             printPCB(PCBptr, fileWriter, consoleWriter);
     
             long status = executeProgram();     // Execute instructions of the running process using CPU
@@ -111,7 +131,7 @@ public class HypoMachine3 {
                 }
                 PCBptr = EndOfList;
             } else if(status == 1 || status < 0) {
-                long terminationCode = terminateProcess(PCBptr, fileWriter, consoleWriter);
+                long terminationCode = terminateProcess(PCBptr);
                 printBoth(fileWriter, consoleWriter, "Process " + PCBptr + " is terminated");
                 
                 if(terminationCode < 0) {
@@ -121,12 +141,10 @@ public class HypoMachine3 {
                 PCBptr = EndOfList;
             } else if(status == io_getc){   // input operation interrupt
                 memory[(int)PCBptr + 3] = inputEvent;
-                saveContext(PCBptr);
                 insertIntoWQ(PCBptr);
                 PCBptr = EndOfList;
             } else if(status == io_putc) {  // output operation interrupt
                 memory[(int)PCBptr + 3] = outputEvent;
-                saveContext(PCBptr);
                 insertIntoWQ(PCBptr);
                 PCBptr = EndOfList;
             } else if(status == 6) {
@@ -136,7 +154,9 @@ public class HypoMachine3 {
                 return;
             }
 
-            // scanner.close();
+            if(RQ == EndOfList) {
+                shutdown = true;
+            }
         }
         
         // Testing printList method
@@ -152,7 +172,7 @@ public class HypoMachine3 {
         // printBoth(fileWriter, consoleWriter, "");
         // End of printList testing
 
-        scanner.close();
+        
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -200,6 +220,7 @@ public class HypoMachine3 {
 
         // Create null process and user processes
         createProcess("null-process.txt", 0, fileOut, consoleOut);
+        // executeProgram();   // execute null process
 
     }
 
@@ -247,6 +268,7 @@ public class HypoMachine3 {
         long haltStatus = 1;
         long timeSliceExpiredStatus = 2;
         long errorStatus = -1;
+        long unknownStatus = -5;
         long status = EndOfList;
         
 
@@ -337,7 +359,7 @@ public class HypoMachine3 {
                     status = systemCall(Op1Value);
                     Clock += 12;
                     timeLeft -= 12;
-                    return status;
+                    break;
                 default:
                     System.err.println("Unknown Opcode: " + opcode);
                     status = errorStatus;
@@ -347,7 +369,7 @@ public class HypoMachine3 {
         }
 
         System.out.println("Time left: " + timeLeft);
-        if(timeLeft <= 0 && status != haltStatus) {
+        if(timeLeft <= 0) {
             System.out.println("Time slice expired");
             status = timeSliceExpiredStatus;
         } 
@@ -396,7 +418,7 @@ public class HypoMachine3 {
 
 
         if(Op1Mode == 1) {
-            GPRs[(int)Op1GPR] = result; // If Op1Mode == 1, stores the result value into GPR
+            GPRs[(int)Op1GPR - 1] = result; // If Op1Mode == 1, stores the result value into GPR
         } else if (Op1Mode == 6) {
             System.err.println("Destination operand cannot be immediate value");
             return;
@@ -422,7 +444,7 @@ public class HypoMachine3 {
         
 
         if(Op1Mode == 1) {
-            GPRs[(int) Op1GPR] = Op2Value;
+            GPRs[(int) Op1GPR - 1] = Op2Value;
         } else if(Op1Mode == 6){
             System.err.println("Error: Destination operand cannot be immediate value");
             return;
@@ -945,17 +967,18 @@ public class HypoMachine3 {
 
         } else {        // insert the free block into the Linked List where it belongs according to its address
             long currentAddr = OSFreeList;
-            while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] != EndOfList){
+            System.out.println("OSFreeList points to: " + OSFreeList);
+            while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] > 0){
+                System.out.println("Current address: " + currentAddr);
                 currentAddr = memory[(int)currentAddr];
             }
             
-            if(ptr + size == memory[(int)currentAddr]) {    // merge if the right  neighbor blocks intersect
+            if(ptr + size == memory[(int)currentAddr]) {    // merge if the neighbor blocks intersect
                 memory[(int)ptr] = memory[(int)memory[(int)currentAddr]];
                 memory[(int)ptr + 1] = size + memory[(int)memory[(int)currentAddr] + 1];
                 memory[(int)currentAddr] = ptr;
-            } else if(currentAddr + memory[(int)currentAddr + 1] == ptr){   // merge if the left neighbor blocks intersect
-                memory[(int)currentAddr + 1] = memory[(int)currentAddr + 1] + size;
-            }  else {
+                System.out.println("Merge success!");
+            } else {
                 memory[(int)ptr] = memory[(int)currentAddr];
                 memory[(int)ptr + 1] = size;
                 memory[(int)currentAddr] = ptr;
@@ -1005,22 +1028,22 @@ public class HypoMachine3 {
 
             } else {    // insert the free block into the Linked List where it belonged
                 long currentAddr = UserFreeList;
-                while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] != EndOfList){
+                while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] > 0){
                     currentAddr = memory[(int)currentAddr];
                     
                 }
                 
-                if(ptr + size == memory[(int)currentAddr]) {    // merge if the right neighbor blocks intersect
+                if(ptr + size == memory[(int)currentAddr]) {    // merge if the neighbor blocks intersect
                     memory[(int)ptr] = memory[(int)memory[(int)currentAddr]];
                     memory[(int)ptr + 1] = size + memory[(int)memory[(int)currentAddr] + 1];
                     memory[(int)currentAddr] = ptr;
-                } else if(currentAddr + memory[(int)currentAddr + 1] == ptr){
-                    memory[(int)currentAddr + 1] = memory[(int)currentAddr + 1] + size;
+                    System.out.println("Merge success!");
                 } else {
                     memory[(int)ptr] = memory[(int)currentAddr];
                     memory[(int)ptr + 1] = size;
                     memory[(int)currentAddr] = ptr;
                 }
+
             }
 
 
@@ -1132,9 +1155,9 @@ public class HypoMachine3 {
         // System.out.printf("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
         int count = 0;
         for(int i = 7; i <= 14; i++) {
-            // System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
-            pcb += String.format("GPR %d: %d%n", count, memory[(int)PCBptr + i]);
             count++;
+            // System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
+            pcb += String.format("GPR %d: %d%n", count, memory[(int)PCBptr]);
         }
         printBoth(fileOut, consoleOut, pcb);
     }
@@ -1285,7 +1308,7 @@ public class HypoMachine3 {
     // Input Parameters: long pid
     // Return: currentPCBptr
     // Written by Maxwell Whelan
-    private static long searchPCBfromRQ(long pid) {
+    private static long searchAndRemovePCBfromRQ(long pid) {
         long currentPCBptr = RQ;
         long previousPCBptr = EndOfList;
 
@@ -1293,10 +1316,18 @@ public class HypoMachine3 {
         // If match is found, remove it from Ready Queue and return PCB pointer
         while(currentPCBptr != EndOfList) {
             if(memory[(int)currentPCBptr + 1] == pid) {
-                
+                // match found, remove from ready queue
+                if(previousPCBptr == EndOfList) {
+                    // first PCB
+                    RQ = memory[(int)currentPCBptr];
+                } else {
+                    // not first PCB
+                    memory[(int)previousPCBptr] = memory[(int)currentPCBptr];
+                }
+
+                memory[(int)currentPCBptr] = EndOfList;
                 return(currentPCBptr);
             }
-
             previousPCBptr = currentPCBptr;
             currentPCBptr = memory[(int)currentPCBptr];
         }
@@ -1312,7 +1343,7 @@ public class HypoMachine3 {
     // Return: 1 (if success), -1 (if error)
     // Error code: -1
     // Written by Sasha Basova
-    private static long terminateProcess(long PCBptr, PrintWriter fileWriter, PrintWriter consoleWriter) {
+    private static long terminateProcess(long PCBptr) {
         long errorCode = -1;
         long successCode = 1;
 
@@ -1324,18 +1355,12 @@ public class HypoMachine3 {
             return errorCode;
         }
 
-        printBoth(fileWriter, consoleWriter, "OS Free List after process termination: ");
-        printList(OSFreeList, fileWriter, consoleWriter);
-
         // return stack memory using stack start address and stack size in the given PCB
         String statusUser = freeUserMemory(memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
         if(statusUser == "Error") {
             System.err.println("Error: Freeing User memory failed.");
             return errorCode;
         }
-
-        printBoth(fileWriter, consoleWriter, "User Free List after process termination: ");
-        printList(UserFreeList, fileWriter, consoleWriter);
         
         return successCode;
     }
@@ -1369,7 +1394,7 @@ public class HypoMachine3 {
 
         // Copy all CPU GPRs into PCB
         for(int i = 0; i < 8; i++) {
-            memory[(int)PCBptr + 7 + i] = GPRs[i];
+            memory[(int)PCBptr + 7] = GPRs[i];
         }
 
         // Copy SP into PCB
@@ -1390,7 +1415,7 @@ public class HypoMachine3 {
         
         // Copy CPU GPRs from given PCB into the GPRs
         for(int i = 0; i < 8; i++) {
-            GPRs[i] = memory[(int)PCBptr + 7 + i];
+            GPRs[i] = memory[(int)PCBptr + 7];
         }
 
         // Restore SP
@@ -1403,52 +1428,51 @@ public class HypoMachine3 {
         PSR = UserMode;     // UserMode is 2, OSMode is 1
     }
 
-    private static void checkAndProcessInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
-        // Scanner scanner1 = new Scanner(System.in);
+    private static void checkAndProcessInterrupt(PrintWriter fileOut, PrintWriter consoleOut) {
+        Scanner scanner1 = new Scanner(System.in);
         System.out.print("Enter interrupt ID: 0 - no interrupt, 1 - run program, 2 - shutdown system, 3 - Input operation completion (io_getc), 4 - Output operation completion (io_putc): ");
-        // int interruptID = scanner.nextInt();
-        String interruptId = scanner.nextLine();
-        int interruptID = Integer.parseInt(interruptId);
+        int interruptID = scanner1.nextInt();
         System.out.println("You chose " + interruptID);
-        
+        scanner1.close();
 
         // Process interrupt
         switch(interruptID) {
             case 0:     // no interrupt
                 break;
             case 1:     // run program
-                ISRrunProgramInterrupt(scanner, fileOut, consoleOut);
+                ISRrunProgramInterrupt(fileOut, consoleOut);
                 break;
             case 2:     // shutdown system interrupt
-                ISRshutdownSystem(fileOut, consoleOut);
+                ISRshutdownSystem();
                 shutdown = true;
                 break;
             case 3:     // input operation completion interrupt
-                ISRinputCompletionInterrupt(scanner, fileOut, consoleOut);
+                ISRinputCompletionInterrupt(fileOut, consoleOut);
                 break;
             case 4:     // output operation completion interrupt
-                ISRoutputCompletionInterrupt(scanner, fileOut, consoleOut);
+                ISRoutputCompletionInterrupt(fileOut, consoleOut);
                 break;
             default:
                 System.err.println("Invalid interrupt ID");
                 break;
         }
-        
+
         return;
     }
 
-    private static void ISRrunProgramInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
-        // Scanner scanner = new Scanner(System.in);
+    private static void ISRrunProgramInterrupt(PrintWriter fileOut, PrintWriter consoleOut) {
+        Scanner scanner = new Scanner(System.in);
         System.out.print("Enter filename:  ");
         String filename = scanner.nextLine();
 
+        scanner.close();
         interrupt = 1;
         createProcess(filename, DefaultPriority, fileOut, consoleOut);
         interrupt = EndOfList;
         return;
     }
 
-    private static void ISRshutdownSystem(PrintWriter fileOut, PrintWriter consoleOut) {
+    private static void ISRshutdownSystem() {
         // Terminate all processes in RQ and WQ and exit from the program
 
         long ptr = RQ;
@@ -1456,16 +1480,16 @@ public class HypoMachine3 {
         // Terminate all processes in RQ one by one
         while(ptr != EndOfList) {
             RQ = memory[(int)ptr];
-            terminateProcess(ptr, fileOut, consoleOut);
+            terminateProcess(ptr);
             ptr = RQ;
         }
 
-        // Terminate all processes in WQ one by one
+        // Terminate all processed in WQ one by one
         ptr = WQ;
 
         while(ptr != EndOfList) {
             WQ = memory[(int)ptr];
-            terminateProcess(ptr, fileOut, consoleOut);
+            terminateProcess(ptr);
             ptr = WQ;
         }
 
@@ -1473,38 +1497,33 @@ public class HypoMachine3 {
 
     }
 
-    private static void ISRinputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
-        // Scanner scanner = new Scanner(System.in);
+    private static void ISRinputCompletionInterrupt(PrintWriter fileOut, PrintWriter consoleOut) {
+        Scanner scanner = new Scanner(System.in);
         System.out.print("Enter process PID completing input completion interrupt:  ");
-        String pid = scanner.nextLine();
-        long PID = Integer.parseInt(pid);
-        
+        long PID = scanner.nextInt();
 
-        
+        scanner.close();
 
         long PCBptr = searchAndRemovePCBfromWQ(PID);
         if(PCBptr > 0) {
-            System.out.println("PCB found in Waiting Queue");
+            Scanner sc = new Scanner(System.in);
             System.out.print("Enter one character:  ");
             char inputChar = scanner.next().charAt(0);
-            scanner.nextLine();
             long asciiValue = (int)inputChar;
             System.out.println("The ASCII value of '" + inputChar + "' is: " + asciiValue);
-            
+            sc.close();
 
             memory[(int)PCBptr + 7] = asciiValue;  // Store the character in the GPR 1 in the PCB
             insertIntoRQ(PCBptr, fileOut, consoleOut);
         } else {
-            PCBptr = searchPCBfromRQ(PID);
+            PCBptr = searchAndRemovePCBfromRQ(PID);
             if(PCBptr > 0) {
-                // Scanner sc = new Scanner(System.in);
-                System.out.println("PCB with entered PID is found in Ready Queue.");
+                Scanner sc = new Scanner(System.in);
                 System.out.print("Enter one character:  ");
                 char inputChar = scanner.next().charAt(0);
-                scanner.nextLine();
                 long asciiValue = (int)inputChar;
                 System.out.println("The ASCII value of '" + inputChar + "' is: " + asciiValue);
-                // sc.close();
+                sc.close();
 
                 memory[(int)PCBptr + 7] = asciiValue;  // Store the character in the GPR 7 in the PCB
             } else {
@@ -1516,24 +1535,22 @@ public class HypoMachine3 {
 
     }
 
-    private static void ISRoutputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
-        // Scanner scanner = new Scanner(System.in);
+    private static void ISRoutputCompletionInterrupt(PrintWriter fileOut, PrintWriter consoleOut) {
+        Scanner scanner = new Scanner(System.in);
         System.out.print("Enter process PID completing output completion interrupt:  ");
-        String pid = scanner.nextLine();
-        long PID = Integer.parseInt(pid);
-        
+        long PID = scanner.nextInt();
 
-        
+        scanner.close();
 
         long PCBptr = searchAndRemovePCBfromWQ(PID);
         if(PCBptr > 0) {
-            System.out.println("PCB found in Waiting Queue");
+
             long outputChar = memory[(int)PCBptr + 7];
             System.out.println("Output character in ASCII format: " + outputChar);
             insertIntoRQ(PCBptr, fileOut, consoleOut);
 
         } else {
-            PCBptr = searchPCBfromRQ(PID);
+            PCBptr = searchAndRemovePCBfromRQ(PID);
             if(PCBptr > 0) {
 
                 long outputChar = memory[(int)PCBptr + 7];
