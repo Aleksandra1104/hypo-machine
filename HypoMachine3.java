@@ -23,7 +23,9 @@
 
 // Homework 4 4/9/2025
 // Team: Sasha Basova and Maxwell Whelan
-// Interrupt (System Calls) management. 
+// Interrupt (System Calls) management. Interrupt prompt happens at the beginning of a while(!shutdown) loop.
+// Functions implemented by Sasha Basova: 
+// Functions implemented by Maxwell Whelan: 
 
 import java.io.*;
 import java.util.*;
@@ -69,10 +71,6 @@ public class HypoMachine3 {
         Scanner scanner = new Scanner(System.in);  // Scanner to read from input 
         initializeSystem(fileWriter, consoleWriter);
         
-        // for(int i = 0; i < filenames.length; i++) {
-        //     createProcess(filenames[i], DefaultPriority, fileWriter, consoleWriter);
-        // }
-
         dumpMemory(fileWriter, consoleWriter, "After Initializing System", 0, 10000); // Dump memory before the execution
 
         while(!shutdown) {
@@ -83,18 +81,21 @@ public class HypoMachine3 {
                 return;
             }
 
-            printBoth(fileWriter, consoleWriter, "Ready Queue Before CPU scheduling");
+            
+            printBoth(fileWriter, consoleWriter, "\nReady Queue Before CPU scheduling");
             printQueue(RQ, fileWriter, consoleWriter);
+            printBoth(fileWriter, consoleWriter, "");
             printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
 
-            dumpMemory(fileWriter, consoleWriter, "Dynamic Memory Area before CPU scheduling", 0, 500);
+            
+            dumpMemory(fileWriter, consoleWriter, "\nDynamic Memory Area before CPU scheduling", 0, 600);
             
 
             long PCBptr = selectProcessFromRQ();    // Select next process from RQ to give CPU
 
             dispatcher(PCBptr);     // Restore CPU context using dispatcher
 
-            printBoth(fileWriter, consoleWriter, "Ready Queue After selecting process from RQ");
+            printBoth(fileWriter, consoleWriter, "\nReady Queue After selecting process from RQ");
             printQueue(RQ, fileWriter, consoleWriter);
         
             printBoth(fileWriter, consoleWriter, "\nRQ: " + RQ + "\n");
@@ -126,7 +127,7 @@ public class HypoMachine3 {
             printBoth(fileWriter, consoleWriter, "Status after execution: " + status + " - " + statusDecoder);
             
 
-            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 500);  // Dump dynamic memory
+            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 600);  // Dump dynamic memory
     
             if(status == 2) {
                 saveContext(PCBptr);
@@ -264,7 +265,7 @@ public class HypoMachine3 {
     // Tasks
     //     While isToExecute is true, executes the instructions stored in memory. Determines opcode, Op1Mode, Op2Mode, Op1GPR, Op2GPR and runs execution according to opcode
     // Input Parameters: none
-    // Return: 1 (program completed and halted), 2 (time slice expired), -1(error)
+    // Return: 1 (program completed and halted), 2 (time slice expired), io_putc (output interrupt), io_getc(input interrupt), EndOfList (error)
     // Error Invalid PC address, Error No end mark is found, Loading Error
     // Updated by Sasha Basova
     private static long executeProgram(PrintWriter fileOut, PrintWriter consoleOut) {
@@ -545,6 +546,11 @@ public class HypoMachine3 {
         SP++;
     }
 
+    // Function: systemCall
+    // Tasks: Set PSR to OSMode, executes system call according to provided systemCallId in parameters
+    // Input Parameters: long systemCallId, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: long
+    // Written by Sasha Basova
     private static long systemCall(long systemCallId, PrintWriter fileOut, PrintWriter consoleOut) {
         PSR = OSMode;
 
@@ -593,17 +599,32 @@ public class HypoMachine3 {
         return status;
     }
 
+    // Function: io_getcSystemCall
+    // Tasks: returns io_getc code
+    // Input Parameters: None
+    // Return: long
+    // Written by Sasha Basova
     private static long io_getcSystemCall(){
         return io_getc;
     }
 
+    // Function: io_putcSystemCall
+    // Tasks: returns io_putc code
+    // Input Parameters: None
+    // Return: long
+    // Written by Sasha Basova
     private static long io_putcSystemCall() {
         return io_putc;
     }
 
+    // Function: MemAllocSystemCall
+    // Tasks: Allocate memory from user free list; Return status from the function is either OK status (6) or an error code
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Return: long
+    // Written by Maxwell Whelan
     private static long MemAllocSystemCall(PrintWriter fileOut, PrintWriter consoleOut) {
         // Allocate memory from user free list
-        // Return status from the function is either the address of allocated memory or an error code
+        // Return status from the function is either OK status (6) or an error code
 
         long size = GPRs[2];  // Declare long size and set it to GPR2 value. GPRs starts from index 0 
 
@@ -625,9 +646,14 @@ public class HypoMachine3 {
 
     }
 
+    // Function: FreeMemSystemCall
+    // Tasks: Frees memory to user free list; Return status from the function is either OK status (6) or an error code
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Return: long
+    // Written by Maxwell Whelan
     private static long FreeMemSystemCall(PrintWriter fileOut, PrintWriter consoleOut) {
-        // Allocate memory from user free list
-        // Return status from the function is either the address of allocated memory or an error code
+        // Frees memory to user free list
+        // Return status from the function is either OK status (6) or an error code
 
         long size = GPRs[2];  // Declare long size and set it to GPR2 value. GPRs starts from index 0 
 
@@ -1429,6 +1455,11 @@ public class HypoMachine3 {
         PSR = UserMode;     // UserMode is 2, OSMode is 1
     }
 
+    // Function: checkAndProcessInterrupt
+    // Tasks: prompts user for an interrupt id and calls interrupt service accordingly
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
     private static void checkAndProcessInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         
         printBoth(fileOut, consoleOut, "Enter interrupt ID: 0 - no interrupt, 1 - run program, 2 - shutdown system, 3 - Input operation completion (io_getc), 4 - Output operation completion (io_putc): ");
@@ -1446,7 +1477,7 @@ public class HypoMachine3 {
                 break;
             case 2:     // shutdown system interrupt
                 ISRshutdownSystem(fileOut, consoleOut);
-                shutdown = true;
+                shutdown = true;        // set global variable shutdown to true forcing the program to exit from the running loop
                 break;
             case 3:     // input operation completion interrupt
                 ISRinputCompletionInterrupt(scanner, fileOut, consoleOut);
@@ -1462,6 +1493,12 @@ public class HypoMachine3 {
         return;
     }
 
+
+    // Function: ISRrunProgramInterrupt
+    // Tasks: Prompts user to enter filename, create process and inserts it into Ready Queue with an interrupt flag set to true, which changes the method if equal priorities ecountered
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
     private static void ISRrunProgramInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         
         printBoth(fileOut, consoleOut, "Enter filename:  ");
@@ -1474,6 +1511,12 @@ public class HypoMachine3 {
         return;
     }
 
+
+    // Function: ISRshutdownSystem
+    // Tasks: Terminate all processes in RQ and WQ
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
     private static void ISRshutdownSystem(PrintWriter fileOut, PrintWriter consoleOut) {
         // Terminate all processes in RQ and WQ and exit from the program
 
@@ -1499,12 +1542,15 @@ public class HypoMachine3 {
 
     }
 
+    // Function: ISRinputCompletionInterrupt
+    // Tasks: propmts user for a process Id that will be completing input interrupt, searches Waiting Queue and Ready Queue for the process with a given id, prompts user for a character and stores its ASCII format in PCB's GPR1
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Maxwell Whelan
     private static void ISRinputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         printBoth(fileOut, consoleOut, "Enter process PID completing input completion interrupt:  ");
         String pid = scanner.nextLine();
         long PID = Integer.parseInt(pid);
-        
-
         
 
         long PCBptr = searchAndRemovePCBfromWQ(PID);
@@ -1544,6 +1590,12 @@ public class HypoMachine3 {
 
     }
 
+
+    // Function: ISRoutputCompletionInterrupt
+    // Tasks: propmts user for a process Id that will be completing output interrupt, searches Waiting Queue and Ready Queue for the process with a given id, and outputs the value stored in PCB's GPR1
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Maxwell Whelan
     private static void ISRoutputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         printBoth(fileOut, consoleOut, "Enter process PID completing output interrupt:  ");
         String pid = scanner.nextLine();
@@ -1562,7 +1614,7 @@ public class HypoMachine3 {
         } else {
             PCBptr = searchPCBfromRQ(PID);
             if(PCBptr > 0) {
-
+                printBoth(fileOut, consoleOut, "PCB is found in Ready Queue");
                 long outputChar = memory[(int)PCBptr + 7];
                 printBoth(fileOut, consoleOut, "Output character in ASCII format: " + outputChar);
 
