@@ -24,8 +24,8 @@
 // Homework 4 4/9/2025
 // Team: Sasha Basova and Maxwell Whelan
 // Interrupt (System Calls) management. Interrupt prompt happens at the beginning of a while(!shutdown) loop.
-// Functions implemented by Sasha Basova: checkAndProcessInterrupt, ISRrunProgramInterrupt, ISRshutdownSystem, systemCall, io_getcSystemCall, io_putcSystemCall
-// Functions implemented by Maxwell Whelan: ISRinputCompletionInterrupt, ISRoutputCompletionInterrupt, MemAllocSystemCall, MemFreeSystemCall
+// Functions implemented by Sasha Basova: checkAndProcessInterrupt, ISRinputCompletionInterrupt, ISRoutputCompletionInterrupt, systemCall, io_getcSystemCall, io_putcSystemCall
+// Functions implemented by Maxwell Whelan: ISRrunProgramInterrupt, ISRshutdownSystem, MemAllocSystemCall, MemFreeSystemCall
 
 import java.io.*;
 import java.util.*;
@@ -81,6 +81,8 @@ public class HypoMachine3 {
                 return;
             }
 
+            
+
             printBoth(fileWriter, consoleWriter, "\nReady Queue Before CPU scheduling");
             printQueue(RQ, fileWriter, consoleWriter);
             printBoth(fileWriter, consoleWriter, "");
@@ -104,7 +106,8 @@ public class HypoMachine3 {
     
             long status = executeProgram(fileWriter, consoleWriter);     // Execute instructions of the running process using CPU
             String statusDecoder = "";
-
+            
+            dumpMemory(fileWriter, consoleWriter, "Memory Dump", 0, 7000);
             switch((int)status) {
                 case 1:
                     statusDecoder = "Program completed and halted";
@@ -112,9 +115,6 @@ public class HypoMachine3 {
                 case 2:
                     statusDecoder = "Time Slice expired. Program is losing CPU.";
                     break;
-                case 6: 
-                    statusDecoder = "Memory Allocation System Call";
-                    return;
                 case 8:
                     statusDecoder = "Input operation System Call occurred";
                     break;
@@ -130,7 +130,7 @@ public class HypoMachine3 {
             
 
             dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 600);  // Dump dynamic memory
-    
+            
             if(status == 2) {
                 saveContext(PCBptr);
                 long statusCode = insertIntoRQ(PCBptr, fileWriter, consoleWriter);
@@ -150,17 +150,14 @@ public class HypoMachine3 {
                 PCBptr = EndOfList;
             } else if(status == io_getc){   // input operation interrupt
                 memory[(int)PCBptr + 3] = inputEvent;
-                // saveContext(PCBptr);
+                saveContext(PCBptr);
                 insertIntoWQ(PCBptr);
                 PCBptr = EndOfList;
             } else if(status == io_putc) {  // output operation interrupt
                 memory[(int)PCBptr + 3] = outputEvent;
-                // saveContext(PCBptr);
+                saveContext(PCBptr);
                 insertIntoWQ(PCBptr);
                 PCBptr = EndOfList;
-            } else if(status == 6) {
-                saveContext(PCBptr);
-                insertIntoRQ(PCBptr, fileWriter, consoleWriter);
             } else {
                 System.err.println("Unknown error occurred.");
                 return;
@@ -280,7 +277,7 @@ public class HypoMachine3 {
         long status = EndOfList;
         
 
-        while (isToExecute && timeLeft > 0) {
+        while (timeLeft > 0) {
             if (PC < 0 || PC >= MEMORY_SIZE) {
                 System.err.println("Error: Invalid PC Address");
                 break;
@@ -297,12 +294,13 @@ public class HypoMachine3 {
 
             switch ((int)opcode) {
                 case 0: // Halt
-                    isToExecute = false; // Stops while loop -> stops the execution 
+                    // isToExecute = false; // Stops while loop -> stops the execution 
                     Clock += 12;
                     timeLeft -= 12;
                     status = haltStatus;
                     System.out.println("Program Halted");
-                    break;
+                    return status;
+                   
                 case 1: // Add
                     executeArithmetic('+', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
                     Clock += 3;
@@ -362,12 +360,15 @@ public class HypoMachine3 {
                     operand1 = fetchOperand(Op1Mode, Op1GPR);
                     long Op1Value = operand1[1];
                     if (operand1[1] < 0) {
-                        return operand1[1];
+                        status = operand1[1];
                     }
                     status = systemCall(Op1Value, fileOut, consoleOut);
+                    if (status == 9 || status == 8) {
+                        return status;
+                    } 
                     Clock += 12;
                     timeLeft -= 12;
-                    return status;
+                    break;
                 default:
                     System.err.println("Unknown Opcode: " + opcode);
                     status = errorStatus;
@@ -377,7 +378,7 @@ public class HypoMachine3 {
         }
 
         System.out.println("Time left: " + timeLeft);
-        if(timeLeft <= 0 && status != haltStatus) {
+        if(timeLeft <= 0 ) {
             System.out.println("Time slice expired");
             status = timeSliceExpiredStatus;
         } 
@@ -561,6 +562,8 @@ public class HypoMachine3 {
     private static long systemCall(long systemCallId, PrintWriter fileOut, PrintWriter consoleOut) {
         PSR = OSMode;
 
+        printBoth(fileOut, consoleOut, "System Call ID is: " + systemCallId + "\n");
+
         long status = 1;        // "OK" code
 
         switch((int)systemCallId) {
@@ -603,6 +606,7 @@ public class HypoMachine3 {
         }
 
         PSR = UserMode;
+        printBoth(fileOut, consoleOut, "System Call status: " + status + "\n");
         return status;
     }
 
@@ -647,7 +651,7 @@ public class HypoMachine3 {
             GPRs[0] = 6;     // OK status
         }
 
-        printBoth(fileOut, consoleOut, "MemAllocSystemCall, GPR0: " + GPRs[0] + " GPR1: " + GPRs[1] + " GPR2: " + GPRs[2]);
+        printBoth(fileOut, consoleOut, "MemAllocSystemCall, GPR0: " + GPRs[0] + " GPR1: " + GPRs[1] + " GPR2: " + GPRs[2] + "\n");
 
         return GPRs[0];
 
@@ -670,7 +674,9 @@ public class HypoMachine3 {
 
         long GPR1 = GPRs[1];
 
-        String  status = freeUserMemory(GPR1, size); 
+        
+        String status = freeUserMemory(GPR1, size); 
+        
         if(status == "OK") {
             GPRs[0] = 6;
         } else {
@@ -678,7 +684,7 @@ public class HypoMachine3 {
         }
 
 
-        printBoth(fileOut, consoleOut, "FreeMemSystemCall, GPR0: " + GPRs[0] + " GPR1: " + GPRs[1] + " GPR2: " + GPRs[2]);
+        printBoth(fileOut, consoleOut, "FreeMemSystemCall, GPR0: " + GPRs[0] + " GPR1: " + GPRs[1] + " GPR2: " + GPRs[2] + "\n");
 
         return GPRs[0];
 
@@ -700,8 +706,8 @@ public class HypoMachine3 {
         fileOut.printf("%4s: ", "GPRs");
         consoleOut.printf("%4s: ", "GPRs");
         for (int i = 0; i < 8; i++) {
-            fileOut.printf("%5s%d ", "GPR", i);
-            consoleOut.printf("%5s%d ", "GPR", i);
+            fileOut.printf("%8s%d ", "GPR", i);
+            consoleOut.printf("%8s%d ", "GPR", i);
         }
         fileOut.println();
         consoleOut.println();
@@ -709,8 +715,8 @@ public class HypoMachine3 {
         fileOut.printf("%4s ", " ");
         consoleOut.printf("%4s ", " ");
         for (int i = 0; i < GPRs.length; i++) {
-            fileOut.printf("%6d ", GPRs[i]);
-            consoleOut.printf("%6d ", GPRs[i]);
+            fileOut.printf("%9d ", GPRs[i]);
+            consoleOut.printf("%9d ", GPRs[i]);
         }
         fileOut.println();
         consoleOut.println();
@@ -718,8 +724,8 @@ public class HypoMachine3 {
         fileOut.printf("%4s ", " ");
         consoleOut.printf("%4s ", " ");
         for (int i = 0; i < 10; i++) {
-            fileOut.printf("%6s", "------");
-            consoleOut.printf("%6s", "------");
+            fileOut.printf("%9s", "------");
+            consoleOut.printf("%9s", "------");
         }
         fileOut.println();
         consoleOut.println();
@@ -728,8 +734,8 @@ public class HypoMachine3 {
             fileOut.printf("%4d: ", i);
             consoleOut.printf("%4d: ", i);
             for (int j = 0; j < 10 && (i + j) < MEMORY_SIZE; j++) {
-                fileOut.printf("%6d ", memory[i + j]);
-                consoleOut.printf("%6d ", memory[i + j]);
+                fileOut.printf("%9d ", memory[i + j]);
+                consoleOut.printf("%9d ", memory[i + j]);
             }
             fileOut.println();
             consoleOut.println();
@@ -990,6 +996,10 @@ public class HypoMachine3 {
             returnCode = -3;
         }
 
+        // for(int i = 0; i <= (int)size; i++) {
+        //     memory[(int)ptr + i] = 0;
+        // }
+
         if(ptr < OSFreeList) {      // if ptr < address pointed by UserFreeList, insert the block in the beginning of the list
 
             if(ptr + size == OSFreeList){   // merge the inserted and first block if the inserted block address + its size = first block address
@@ -1049,7 +1059,8 @@ public class HypoMachine3 {
             returnCode = -3;
         }
 
-            
+        
+
             if(ptr < UserFreeList) {    // if ptr < address pointed by UserFreeList, insert the block in the beginning of the list
 
                 if(ptr + size == UserFreeList){     // merge the inserted and first block if the inserted block address + its size = first block address
@@ -1128,7 +1139,7 @@ public class HypoMachine3 {
         }
 
         // Store stack info in the PCB - SP, stack start address and stack size
-        memory[(int)PCBptr + 15] = ptr + StackSize - 1;
+        memory[(int)PCBptr + 15] = ptr + StackSize;
         memory[(int)PCBptr + 5] = ptr;
         memory[(int)PCBptr + 6] = StackSize;
         
@@ -1500,7 +1511,7 @@ public class HypoMachine3 {
     // Tasks: Prompts user to enter filename, create process and inserts it into Ready Queue with an interrupt flag set to true, which changes the method if equal priorities ecountered
     // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
     // Return: void
-    // Written by Sasha Basova
+    // Written by Maxwell Whelan
     private static void ISRrunProgramInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         
         printBoth(fileOut, consoleOut, "Enter filename:  ");
@@ -1518,7 +1529,7 @@ public class HypoMachine3 {
     // Tasks: Terminate all processes in RQ and WQ
     // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
     // Return: void
-    // Written by Sasha Basova
+    // Written by Maxwell Whelan
     private static void ISRshutdownSystem(PrintWriter fileOut, PrintWriter consoleOut) {
         // Terminate all processes in RQ and WQ and exit from the program
 
@@ -1540,6 +1551,7 @@ public class HypoMachine3 {
             ptr = WQ;
         }
 
+        printBoth(fileOut, consoleOut, "System is successfully shut down");
         return;
 
     }
@@ -1548,7 +1560,7 @@ public class HypoMachine3 {
     // Tasks: propmts user for a process Id that will be completing input interrupt, searches Waiting Queue and Ready Queue for the process with a given id, prompts user for a character and stores its ASCII format in PCB's GPR1
     // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
     // Return: void
-    // Written by Maxwell Whelan
+    // Written by Sasha Basova
     private static void ISRinputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         printBoth(fileOut, consoleOut, "Enter process PID completing input completion interrupt:  ");
         String pid = scanner.nextLine();
@@ -1567,7 +1579,8 @@ public class HypoMachine3 {
             
             
 
-            memory[(int)PCBptr + 7] = asciiValue;  // Store the character in the GPR 1 in the PCB
+            memory[(int)PCBptr + 11] = asciiValue;  // Store the character in the GPR 4 in the PCB
+            printBoth(fileOut, consoleOut, "Character in PCB R4: " + memory[(int)PCBptr + 10]);
             insertIntoRQ(PCBptr, fileOut, consoleOut);
         } else {
             PCBptr = searchPCBfromRQ(PID);
@@ -1582,7 +1595,7 @@ public class HypoMachine3 {
                 printBoth(fileOut, consoleOut, "The ASCII value of '" + inputChar + "' is: " + asciiValue);
                 
 
-                memory[(int)PCBptr + 7] = asciiValue;  // Store the character in the GPR 7 in the PCB
+                memory[(int)PCBptr + 11] = asciiValue;  // Store the character in the GPR 4 in the PCB
             } else {
                 printBoth(fileOut, consoleOut, "Invalid PID provided.");
             }
@@ -1597,19 +1610,17 @@ public class HypoMachine3 {
     // Tasks: propmts user for a process Id that will be completing output interrupt, searches Waiting Queue and Ready Queue for the process with a given id, and outputs the value stored in PCB's GPR1
     // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
     // Return: void
-    // Written by Maxwell Whelan
+    // Written by Sasha Basova
     private static void ISRoutputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
         printBoth(fileOut, consoleOut, "Enter process PID completing output interrupt:  ");
         String pid = scanner.nextLine();
         long PID = Integer.parseInt(pid);
         
 
-        
-
         long PCBptr = searchAndRemovePCBfromWQ(PID);
         if(PCBptr > 0) {
             printBoth(fileOut, consoleOut, "PCB found in Waiting Queue");
-            long outputChar = memory[(int)PCBptr + 7];
+            long outputChar = memory[(int)PCBptr + 11];
             printBoth(fileOut, consoleOut, "Output character in ASCII format: " + outputChar);
             insertIntoRQ(PCBptr, fileOut, consoleOut);
 
@@ -1617,7 +1628,7 @@ public class HypoMachine3 {
             PCBptr = searchPCBfromRQ(PID);
             if(PCBptr > 0) {
                 printBoth(fileOut, consoleOut, "PCB is found in Ready Queue");
-                long outputChar = memory[(int)PCBptr + 7];
+                long outputChar = memory[(int)PCBptr + 11];
                 printBoth(fileOut, consoleOut, "Output character in ASCII format: " + outputChar);
 
             } else {
