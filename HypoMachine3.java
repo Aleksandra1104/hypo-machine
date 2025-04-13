@@ -24,8 +24,8 @@
 // Homework 4 4/9/2025
 // Team: Sasha Basova and Maxwell Whelan
 // Interrupt (System Calls) management. Interrupt prompt happens at the beginning of a while(!shutdown) loop.
-// Functions implemented by Sasha Basova: 
-// Functions implemented by Maxwell Whelan: 
+// Functions implemented by Sasha Basova: checkAndProcessInterrupt, ISRrunProgramInterrupt, ISRshutdownSystem, systemCall, io_getcSystemCall, io_putcSystemCall
+// Functions implemented by Maxwell Whelan: ISRinputCompletionInterrupt, ISRoutputCompletionInterrupt, MemAllocSystemCall, MemFreeSystemCall
 
 import java.io.*;
 import java.util.*;
@@ -49,7 +49,7 @@ public class HypoMachine3 {
     private static final long CreatedState = 0;
     private static final long ReadyState = 1;
     private static final long WaitingState = 2;
-    private static final long StackSize = 10;
+    private static final long StackSize = 20;
     private static final long UserMode = 2;
     private static final long OSMode = 1;
     private static final long Timeslice = 300;
@@ -81,7 +81,6 @@ public class HypoMachine3 {
                 return;
             }
 
-            
             printBoth(fileWriter, consoleWriter, "\nReady Queue Before CPU scheduling");
             printQueue(RQ, fileWriter, consoleWriter);
             printBoth(fileWriter, consoleWriter, "");
@@ -113,6 +112,9 @@ public class HypoMachine3 {
                 case 2:
                     statusDecoder = "Time Slice expired. Program is losing CPU.";
                     break;
+                case 6: 
+                    statusDecoder = "Memory Allocation System Call";
+                    return;
                 case 8:
                     statusDecoder = "Input operation System Call occurred";
                     break;
@@ -139,25 +141,26 @@ public class HypoMachine3 {
                 PCBptr = EndOfList;
             } else if(status == 1 || status < 0) {
                 long terminationCode = terminateProcess(PCBptr, fileWriter, consoleWriter);
-                printBoth(fileWriter, consoleWriter, "Process " + PCBptr + " is terminated");
+                printBoth(fileWriter, consoleWriter, "Process " + PCBptr + " is successfully terminated");
                 
                 if(terminationCode < 0) {
-                    System.err.println("Error: Error occurred while terminating the process");
+                    printBoth(fileWriter, consoleWriter, " Error: Error occurred while terminating the process");
                     return;
                 }
                 PCBptr = EndOfList;
             } else if(status == io_getc){   // input operation interrupt
                 memory[(int)PCBptr + 3] = inputEvent;
-                saveContext(PCBptr);
+                // saveContext(PCBptr);
                 insertIntoWQ(PCBptr);
                 PCBptr = EndOfList;
             } else if(status == io_putc) {  // output operation interrupt
                 memory[(int)PCBptr + 3] = outputEvent;
-                saveContext(PCBptr);
+                // saveContext(PCBptr);
                 insertIntoWQ(PCBptr);
                 PCBptr = EndOfList;
             } else if(status == 6) {
-                // user memory allocation or freeing event
+                saveContext(PCBptr);
+                insertIntoRQ(PCBptr, fileWriter, consoleWriter);
             } else {
                 System.err.println("Unknown error occurred.");
                 return;
@@ -346,11 +349,11 @@ public class HypoMachine3 {
                     timeLeft -= 4;
                     break;
                 case 10: // Push
-                    executePush();
+                    executePush(fileOut, consoleOut);
                     Clock += 2;
                     break;
                 case 11: //Pop
-                    executePop();
+                    executePop(fileOut, consoleOut);
                     Clock += 2;
                     timeLeft -= 2;
                     break;
@@ -511,7 +514,7 @@ public class HypoMachine3 {
     // Input Parameters: none
     // Return: void
     // Error: Invalid Memory Address, Error: Stack Overflow
-    private static void executePush() {
+    private static void executePush(PrintWriter fileOut, PrintWriter consoleOut) {
         long address = memory[(int) PC];
         PC++;
         if(address >= MEMORY_SIZE || address < 0) {
@@ -524,8 +527,10 @@ public class HypoMachine3 {
         }
         int addressToGetValueFrom = (int) address;
         int stackAddressToPushValueTo = (int) SP;
+        printBoth(fileOut, consoleOut, "A value to be pushed on the stack: " + memory[addressToGetValueFrom] + "\n");
         memory[stackAddressToPushValueTo] = memory[addressToGetValueFrom];
         SP--; // stack grows downwards
+        printBoth(fileOut, consoleOut, "SP after executing push operation points to " + SP + "\n");
     }
 
     // Function: executePop
@@ -534,7 +539,7 @@ public class HypoMachine3 {
     // Input Parameters: none
     // Return: void
     // Error: Invalid Memory Address
-    private static void executePop() {
+    private static void executePop(PrintWriter fileOut, PrintWriter consoleOut) {
         long address = memory[(int) PC++];
         if(address >= MEMORY_SIZE || address < 0) {
             System.err.println("Error: Invalid Memory Address");
@@ -542,8 +547,10 @@ public class HypoMachine3 {
         }
         int stackAddressToPopValueFrom = (int) SP;
         int addressToPutValueTo = (int) address;
+        printBoth(fileOut, consoleOut, "Value to be popped from the stack: " + memory[stackAddressToPopValueFrom] + "\n");
         memory[addressToPutValueTo] = memory[stackAddressToPopValueFrom];
         SP++;
+        printBoth(fileOut, consoleOut, "SP after executing pop operation points to " + SP + "\n");
     }
 
     // Function: systemCall
@@ -626,7 +633,7 @@ public class HypoMachine3 {
         // Allocate memory from user free list
         // Return status from the function is either OK status (6) or an error code
 
-        long size = GPRs[2];  // Declare long size and set it to GPR2 value. GPRs starts from index 0 
+        long size = GPRs[2];  // Declare long size and set it to GPR2 value. 
 
         if(size == 1) {
             size = 2;
@@ -655,7 +662,7 @@ public class HypoMachine3 {
         // Frees memory to user free list
         // Return status from the function is either OK status (6) or an error code
 
-        long size = GPRs[2];  // Declare long size and set it to GPR2 value. GPRs starts from index 0 
+        long size = GPRs[2];  // Declare long size and set it to GPR2 value. 
 
         if(size == 1) {
             size = 2;
@@ -1046,6 +1053,7 @@ public class HypoMachine3 {
             if(ptr < UserFreeList) {    // if ptr < address pointed by UserFreeList, insert the block in the beginning of the list
 
                 if(ptr + size == UserFreeList){     // merge the inserted and first block if the inserted block address + its size = first block address
+                    
                     memory[(int)ptr] = memory[(int)UserFreeList];
                     memory[(int)ptr + 1] = size + memory[(int)UserFreeList + 1];
                     UserFreeList = ptr;
@@ -1120,7 +1128,7 @@ public class HypoMachine3 {
         }
 
         // Store stack info in the PCB - SP, stack start address and stack size
-        memory[(int)PCBptr + 15] = ptr + StackSize;
+        memory[(int)PCBptr + 15] = ptr + StackSize - 1;
         memory[(int)PCBptr + 5] = ptr;
         memory[(int)PCBptr + 6] = StackSize;
         
@@ -1369,25 +1377,19 @@ public class HypoMachine3 {
         long successCode = 1;
 
         // return PCB memory using the PCBptr and PCBsize
-        System.out.println("PCBptr before freeing OS memory: " + PCBptr);
         String statusOS = freeOSMemory(PCBptr, PCBsize);
         if(statusOS == "Error") {
             System.err.println("Error: Freeing OS memory failed.");
             return errorCode;
         }
 
-        printBoth(fileWriter, consoleWriter, "OS Free List after process termination: ");
-        printList(OSFreeList, fileWriter, consoleWriter);
-
         // return stack memory using stack start address and stack size in the given PCB
         String statusUser = freeUserMemory(memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
         if(statusUser == "Error") {
-            System.err.println("Error: Freeing User memory failed.");
+            printBoth(fileWriter, consoleWriter, "Error: Freeing User memory failed.");
             return errorCode;
         }
-
-        printBoth(fileWriter, consoleWriter, "User Free List after process termination: ");
-        printList(UserFreeList, fileWriter, consoleWriter);
+        
         
         return successCode;
     }
