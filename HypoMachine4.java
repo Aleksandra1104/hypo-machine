@@ -21,17 +21,17 @@
 // Functions implemented by Maxwell: insertIntoRQ, insertIntoWQ, searchAndRemovePCBfromWQ, searchAndRemovePCBfromRQ, selectProcessFromRQ 
 
 
-// Homework 4 4/9/2025
+// Homework 4 4/18/2025
 // Team: Sasha Basova and Maxwell Whelan
 // Interrupt (System Calls) management. Interrupt prompt happens at the beginning of a while(!shutdown) loop.
-// Functions implemented by Sasha Basova: checkAndProcessInterrupt, ISRinputCompletionInterrupt, ISRoutputCompletionInterrupt, systemCall, io_getcSystemCall, io_putcSystemCall
-// Functions implemented by Maxwell Whelan: ISRrunProgramInterrupt, ISRshutdownSystem, MemAllocSystemCall, MemFreeSystemCall
+// Functions implemented by Sasha Basova: checkAndProcessInterrupt, ISRinputCompletionInterrupt, ISRoutputCompletionInterrupt, systemCall, MemAllocSystemCall, MemFreeSystemCall
+// Functions implemented by Maxwell Whelan: ISRrunProgramInterrupt, ISRshutdownSystem,  io_getcSystemCall, io_putcSystemCall, set_systemClock, get_systemClock
 
 import java.io.*;
 import java.util.*;
 
 
-public class HypoMachine3 {
+public class HypoMachine4 {
     // Memory and Registers
     private static final int MEMORY_SIZE = 10000;
     private static long[] memory = new long[MEMORY_SIZE]; // memory array of the length MEMORY_SIZE
@@ -63,7 +63,7 @@ public class HypoMachine3 {
     // Updated both by Sasha Basova and Maxwell Whelan
     public static void main(String[] args) {
         try (
-            PrintWriter fileWriter = new PrintWriter(new FileWriter("basova_whelan-hw3_output.txt")); // FileWriter to output into basova-hw1_output.txt
+            PrintWriter fileWriter = new PrintWriter(new FileWriter("basova_whelan-hw4_output.txt")); // FileWriter to output into basova-hw1_output.txt
             PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
         ) {
 
@@ -541,6 +541,7 @@ public class HypoMachine3 {
     // Return: void
     // Error: Invalid Memory Address
     private static void executePop(PrintWriter fileOut, PrintWriter consoleOut) {
+        SP++;
         long address = memory[(int) PC++];
         if(address >= MEMORY_SIZE || address < 0) {
             System.err.println("Error: Invalid Memory Address");
@@ -550,7 +551,6 @@ public class HypoMachine3 {
         int addressToPutValueTo = (int) address;
         printBoth(fileOut, consoleOut, "Value to be popped from the stack: " + memory[stackAddressToPopValueFrom] + "\n");
         memory[addressToPutValueTo] = memory[stackAddressToPopValueFrom];
-        SP++;
         printBoth(fileOut, consoleOut, "SP after executing pop operation points to " + SP + "\n");
     }
 
@@ -595,10 +595,10 @@ public class HypoMachine3 {
                 status = io_putcSystemCall();
                 break;
             case 10:    // time_get system call
-                System.err.println("time_get system call not implemented.");
+                get_systemClock(fileOut, consoleOut);
                 break;
             case 11:      // time_set system call 
-                System.err.println("time_set system call not implemented.");
+                set_systemClock(fileOut, consoleOut);
                 break;
             default:
                 System.err.println("Invalid System Call Id");
@@ -610,11 +610,28 @@ public class HypoMachine3 {
         return status;
     }
 
+    // Written by Maxwell Whelan
+    private static long get_systemClock(PrintWriter fileOut, PrintWriter consoleOut) {
+        long successCode = 6;
+
+        printBoth(fileOut, consoleOut, "Clock: " + Clock);
+        return successCode;
+    }
+
+    // Written by Maxwell Whelan
+    private static long set_systemClock(PrintWriter fileOut, PrintWriter consoleOut) {
+        long successCode = 6;
+
+        Clock = 0;
+        printBoth(fileOut, consoleOut, "Clock set to 0: ");
+        return successCode;
+    }
+
     // Function: io_getcSystemCall
     // Tasks: returns io_getc code
     // Input Parameters: None
     // Return: long
-    // Written by Sasha Basova
+    // Written by Maxwell Whelan
     private static long io_getcSystemCall(){
         return io_getc;
     }
@@ -623,7 +640,7 @@ public class HypoMachine3 {
     // Tasks: returns io_putc code
     // Input Parameters: None
     // Return: long
-    // Written by Sasha Basova
+    // Written by Maxwell Whelan
     private static long io_putcSystemCall() {
         return io_putc;
     }
@@ -632,7 +649,7 @@ public class HypoMachine3 {
     // Tasks: Allocate memory from user free list; Return status from the function is either OK status (6) or an error code
     // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
     // Return: long
-    // Written by Maxwell Whelan
+    // Written by Sasha Basova
     private static long MemAllocSystemCall(PrintWriter fileOut, PrintWriter consoleOut) {
         // Allocate memory from user free list
         // Return status from the function is either OK status (6) or an error code
@@ -661,7 +678,7 @@ public class HypoMachine3 {
     // Tasks: Frees memory to user free list; Return status from the function is either OK status (6) or an error code
     // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
     // Return: long
-    // Written by Maxwell Whelan
+    // Written by Sasha Basova
     private static long FreeMemSystemCall(PrintWriter fileOut, PrintWriter consoleOut) {
         // Frees memory to user free list
         // Return status from the function is either OK status (6) or an error code
@@ -1389,14 +1406,14 @@ public class HypoMachine3 {
 
         // return PCB memory using the PCBptr and PCBsize
         String statusOS = freeOSMemory(PCBptr, PCBsize);
-        if(statusOS == "Error") {
+        if(statusOS.equals("Error")) {
             System.err.println("Error: Freeing OS memory failed.");
             return errorCode;
         }
 
         // return stack memory using stack start address and stack size in the given PCB
         String statusUser = freeUserMemory(memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
-        if(statusUser == "Error") {
+        if(statusUser.equals("Error")) {
             printBoth(fileWriter, consoleWriter, "Error: Freeing User memory failed.");
             return errorCode;
         }
@@ -1416,11 +1433,11 @@ public class HypoMachine3 {
         if(RQ != EndOfList) {
             // remove first PCB from Ready Queue
             RQ = memory[(int)PCBptr];
+            // Set next PCB pointer to EndOfList in the selected PCB
+           
         }
-
-        // Set next PCB pointer to EndOfList in the selected PCB
         memory[(int)PCBptr] = EndOfList;
-
+        
         return(PCBptr);
     }
 
@@ -1580,7 +1597,7 @@ public class HypoMachine3 {
             
 
             memory[(int)PCBptr + 11] = asciiValue;  // Store the character in the GPR 4 in the PCB
-            printBoth(fileOut, consoleOut, "Character in PCB R4: " + memory[(int)PCBptr + 10]);
+            printBoth(fileOut, consoleOut, "Character in PCB R4: " + memory[(int)PCBptr + 11]);
             insertIntoRQ(PCBptr, fileOut, consoleOut);
         } else {
             PCBptr = searchPCBfromRQ(PID);

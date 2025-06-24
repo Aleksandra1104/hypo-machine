@@ -1,0 +1,1659 @@
+// Sasha Basova, Student ID: 301089119
+// Homework 1 2/9/2025
+// Hardware Simulator HYPO Machine
+// Implemented with Java
+// Performs: initialize, load an executable file into memory, execute program, output memory dump into console and basova-hw1_output.txt file
+// Error Codes: -1 if there is an error; 0 if there are no errors. 
+// Return values: Only methods that return are absoluteLoader() which returns Long and fetchOperand() which return Long[]
+// Global variables for the class HypoMachine: memory, GPRs, MAR, MBR, IR, SP, PC, PSR, Clock, UserFreeList, OSFreeList
+// Constants: MEMORY_SIZE, EndOfList, DefaultPriority, CreatedState, ReadyState, WaitingState, StackSize, UserMode, OSMode, Timeslice
+
+//Homework 2 3/9/2025 
+// Team: Sasha Basova and Maxwell Whelan
+// Memory management and 7 cases to test the functionality of memory management
+// Functions written by Sasha Basova: freeOSMemory(), freeUserMemory() and 1 - 4 test cases
+// Functions written by Maxwell Whelan: allocateOSMemory(), allocateUserMemory() and 5 - 7 test cases
+
+//Homework 3  4/5/2025
+// Team: Sasha Basova and Maxwell Whelan
+// Process management. Updated main, initialize and executeProgram functions to test process management. Three user processes are created (from three ML files) and one OS process (null process) is always running if there is no other processes in the ready queue
+// Functions implemented by Sasha: createProcess, initializePCB, printPCB, printQueue, terminateProcess, saveContext, dispatcher
+// Functions implemented by Maxwell: insertIntoRQ, insertIntoWQ, searchAndRemovePCBfromWQ, searchAndRemovePCBfromRQ, selectProcessFromRQ 
+
+
+// Homework 4 4/18/2025
+// Team: Sasha Basova and Maxwell Whelan
+// Interrupt (System Calls) management. Interrupt prompt happens at the beginning of a while(!shutdown) loop.
+// Functions implemented by Sasha Basova: checkAndProcessInterrupt, ISRinputCompletionInterrupt, ISRoutputCompletionInterrupt, systemCall, MemAllocSystemCall, MemFreeSystemCall
+// Functions implemented by Maxwell Whelan: ISRrunProgramInterrupt, ISRshutdownSystem,  io_getcSystemCall, io_putcSystemCall, set_systemClock, get_systemClock
+
+import java.io.*;
+import java.util.*;
+
+
+public class HypoMachine4 {
+    // Memory and Registers
+    private static final int MEMORY_SIZE = 10000;
+    private static long[] memory = new long[MEMORY_SIZE]; // memory array of the length MEMORY_SIZE
+    private static long[] GPRs = new long[8]; // General-purpose registers
+    private static long MAR, MBR, IR, SP, PC, PSR, Clock;  // Special registers
+    private static final long EndOfList = -3;
+    private static long OSFreeList = EndOfList; 
+    private static long UserFreeList = EndOfList;
+    private static long RQ = EndOfList; // Ready Queue set to empty list
+    private static long WQ = EndOfList; // Waiting Queue set to empty list
+    private static long PCBsize = 18;
+    private static long ProcessID = 1;
+    private static boolean shutdown = false;
+    private static final long DefaultPriority = 128;
+    private static final long CreatedState = 0;
+    private static final long ReadyState = 1;
+    private static final long WaitingState = 2;
+    private static final long StackSize = 20;
+    private static final long UserMode = 2;
+    private static final long OSMode = 1;
+    private static final long Timeslice = 300;
+    private static final long io_getc = 8;
+    private static final long io_putc = 9;
+    private static final long inputEvent = 3;   // 0 – no interrupt, 1 – run program, 2 – shutdown system,  3 – Input operation completion (io_getc), 4 – Output operation completion (io_putc)
+    private static final long outputEvent = 4;
+    private static long interrupt = EndOfList;
+
+
+    // Updated both by Sasha Basova and Maxwell Whelan
+    public static void main(String[] args) {
+        try (
+            PrintWriter fileWriter = new PrintWriter(new FileWriter("basova_whelan-hw4_output.txt")); // FileWriter to output into basova-hw1_output.txt
+            PrintWriter consoleWriter = new PrintWriter(System.out, true) // Auto-flushing
+        ) {
+
+
+        Scanner scanner = new Scanner(System.in);  // Scanner to read from input 
+        initializeSystem(fileWriter, consoleWriter);
+        
+        dumpMemory(fileWriter, consoleWriter, "After Initializing System", 0, 10000); // Dump memory before the execution
+
+        while(!shutdown) {
+
+            checkAndProcessInterrupt(scanner, fileWriter, consoleWriter);
+
+            if(shutdown) {
+                return;
+            }
+
+            
+
+            printBoth(fileWriter, consoleWriter, "\nReady Queue Before CPU scheduling");
+            printQueue(RQ, fileWriter, consoleWriter);
+            printBoth(fileWriter, consoleWriter, "");
+            printBoth(fileWriter, consoleWriter, "RQ: " + RQ);
+
+            
+            dumpMemory(fileWriter, consoleWriter, "\nDynamic Memory Area before CPU scheduling", 0, 600);
+            
+
+            long PCBptr = selectProcessFromRQ();    // Select next process from RQ to give CPU
+
+            dispatcher(PCBptr);     // Restore CPU context using dispatcher
+
+            printBoth(fileWriter, consoleWriter, "\nReady Queue After selecting process from RQ");
+            printQueue(RQ, fileWriter, consoleWriter);
+        
+            printBoth(fileWriter, consoleWriter, "\nRQ: " + RQ + "\n");
+
+            printBoth(fileWriter, consoleWriter, "Selected process to be given CPU:");
+            printPCB(PCBptr, fileWriter, consoleWriter);
+    
+            long status = executeProgram(fileWriter, consoleWriter);     // Execute instructions of the running process using CPU
+            String statusDecoder = "";
+            
+            dumpMemory(fileWriter, consoleWriter, "Memory Dump", 0, 7000);
+            switch((int)status) {
+                case 1:
+                    statusDecoder = "Program completed and halted";
+                    break;
+                case 2:
+                    statusDecoder = "Time Slice expired. Program is losing CPU.";
+                    break;
+                case 8:
+                    statusDecoder = "Input operation System Call occurred";
+                    break;
+                case 9:
+                    statusDecoder = "Output operation System Call occurred";
+                    break;
+                default:
+                    statusDecoder = "Unknown Error occurred.";
+                    break;
+            }
+
+            printBoth(fileWriter, consoleWriter, "Status after execution: " + status + " - " + statusDecoder);
+            
+
+            dumpMemory(fileWriter, consoleWriter, "After Executing Program", 0, 600);  // Dump dynamic memory
+            
+            if(status == 2) {
+                saveContext(PCBptr);
+                long statusCode = insertIntoRQ(PCBptr, fileWriter, consoleWriter);
+                if(statusCode < 0) {
+                    System.err.println("Error: Error occurred while inserting the process into Ready Queue");
+                    return;
+                }
+                PCBptr = EndOfList;
+            } else if(status == 1 || status < 0) {
+                long terminationCode = terminateProcess(PCBptr, fileWriter, consoleWriter);
+                printBoth(fileWriter, consoleWriter, "Process " + PCBptr + " is successfully terminated");
+                
+                if(terminationCode < 0) {
+                    printBoth(fileWriter, consoleWriter, " Error: Error occurred while terminating the process");
+                    return;
+                }
+                PCBptr = EndOfList;
+            } else if(status == io_getc){   // input operation interrupt
+                memory[(int)PCBptr + 3] = inputEvent;
+                saveContext(PCBptr);
+                insertIntoWQ(PCBptr);
+                PCBptr = EndOfList;
+            } else if(status == io_putc) {  // output operation interrupt
+                memory[(int)PCBptr + 3] = outputEvent;
+                saveContext(PCBptr);
+                insertIntoWQ(PCBptr);
+                PCBptr = EndOfList;
+            } else {
+                System.err.println("Unknown error occurred.");
+                return;
+            }
+
+            
+        }
+        
+        // Testing printList method
+        // printList(UserFreeList, fileWriter, consoleWriter);
+        // printBoth(fileWriter, consoleWriter, "Case 1: Allocate entire first block and free it.");
+        // long allocatedMemoryAddr = allocateUserMemory(200);
+        // printBoth(fileWriter, consoleWriter, "Allocated Memory Address: " + allocatedMemoryAddr + ", Size: "  + 200);
+        // printBoth(fileWriter, consoleWriter, "User Free List after allocation: ");
+        // printList(UserFreeList, fileWriter, consoleWriter);
+        // freeUserMemory(allocatedMemoryAddr, 200);
+        // printBoth(fileWriter, consoleWriter, "User Free List after freeing memory:");
+        // printList(UserFreeList, fileWriter, consoleWriter);
+        // printBoth(fileWriter, consoleWriter, "");
+        // End of printList testing
+
+        scanner.close();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        
+    }
+
+    // Function: initializeSystem
+    // Tasks
+    //     Initializes array memory and array GPRs with 0s, initializes MAR, MBR, IR, PC, PSR, Clock to 0; initializes SP to 9999
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Output Parameters: None
+    // Return: void
+    // Updated by Maxwell Whelan
+    private static void initializeSystem(PrintWriter fileOut, PrintWriter consoleOut) {
+        Arrays.fill(memory, 0);
+        Arrays.fill(GPRs, 0);
+        MAR = MBR = IR = PC = PSR = Clock = 0;
+        SP = 9999;
+        UserFreeList = 3100;   // points to the address of the first free block 
+        memory[3100] = 4000;   // first user free block
+        memory[3101] = 200;
+
+        memory[4000] = 5000;    // second user free block
+        memory[4001] = 700;
+
+        memory[5000] = 5500;    // third user free block
+        memory[5001] = 300;
+
+        memory[5500] = EndOfList;   // fourth user free block
+        memory[5501] = 1400;
+
+        OSFreeList = 7100;
+        memory[7100] = 8000;    // first os free block
+        memory[7101] = 300;
+
+        memory[8000] = 8500;    // second os free block
+        memory[8001] = 400;
+
+        memory[8500] = 9000;    // third os free block
+        memory[8501] = 300;
+
+        memory[9000] = EndOfList;   // fourth os free block
+        memory[9001] = 600;
+
+        // Create null process and user processes
+        createProcess("null-process.txt", 0, fileOut, consoleOut);
+
+    }
+
+    // Function: absoluteLoader
+    // Tasks
+    //     Reads from input file and loads the content into memory
+    // Input Parameters: fileName        Name of the executable file
+    // Return: Long     -1 if there is an error or start address if no error
+    // Error Invalid Instruction address, Error No end mark is found, Loading Error
+    private static long absoluteLoader(String fileName) {
+        try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] parts = line.trim().split("\\s+"); // stores two parts of the string line into an array parts
+                if (parts.length == 2) {
+                    long address = Long.parseLong(parts[0]); // stores first element of array parts into Long address
+                    long value = Long.parseLong(parts[1]); // stores second element of parts into Long value
+                    if (address < 0) return value; // End of program, return PC start
+                    if (address >= MEMORY_SIZE) {
+                        System.err.println("Error: Invalid Instruction Address");
+                        return -1; // Invalid address
+                    } 
+                    memory[(int) address] = value; // stores value at the memory index which equals (int) address
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error loading file: " + e.getMessage());
+            return -1;
+        }
+        System.err.println("Error: No End Marker Found");
+        return -1; // Error if no end marker
+    }
+
+
+    // Function: executeProgram
+    // Tasks
+    //     While isToExecute is true, executes the instructions stored in memory. Determines opcode, Op1Mode, Op2Mode, Op1GPR, Op2GPR and runs execution according to opcode
+    // Input Parameters: none
+    // Return: 1 (program completed and halted), 2 (time slice expired), io_putc (output interrupt), io_getc(input interrupt), EndOfList (error)
+    // Error Invalid PC address, Error No end mark is found, Loading Error
+    // Updated by Sasha Basova
+    private static long executeProgram(PrintWriter fileOut, PrintWriter consoleOut) {
+        boolean isToExecute = true;
+        long timeLeft = Timeslice;
+        long haltStatus = 1;
+        long timeSliceExpiredStatus = 2;
+        long errorStatus = EndOfList;
+        long status = EndOfList;
+        
+
+        while (timeLeft > 0) {
+            if (PC < 0 || PC >= MEMORY_SIZE) {
+                System.err.println("Error: Invalid PC Address");
+                break;
+            }
+            MAR = PC; // Stores current PC value into MAR
+            MBR = memory[(int) MAR]; // Stores the value from the memory[(int) MAR] into MBR
+            IR = MBR; // Stores MBR value into IR
+            PC++; // increments PC
+            long opcode = (IR / 10000);
+            long Op1Mode = ((IR % 10000) / 1000);
+            long Op1GPR = (((IR % 10000) % 1000) / 100);
+            long Op2Mode = ((((IR % 10000) % 1000) % 100) / 10);
+            long Op2GPR = ((((IR % 10000) % 1000) % 100) % 10);
+
+            switch ((int)opcode) {
+                case 0: // Halt
+                    // isToExecute = false; // Stops while loop -> stops the execution 
+                    Clock += 12;
+                    timeLeft -= 12;
+                    status = haltStatus;
+                    System.out.println("Program Halted");
+                    return status;
+                   
+                case 1: // Add
+                    executeArithmetic('+', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
+                    Clock += 3;
+                    timeLeft -= 3;
+                    break;
+                case 2: // Subtract
+                    executeArithmetic('-', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
+                    Clock += 3;
+                    timeLeft -= 3;
+                    break;
+                case 3: // Multiply
+                    executeArithmetic('*', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
+                    Clock += 6;
+                    timeLeft -= 6;
+                    break;
+                case 4: // Divide
+                    executeArithmetic('/', Op1Mode, Op1GPR, Op2Mode, Op2GPR);
+                    Clock += 6;
+                    timeLeft -= 6;
+                    break;
+                case 5: // Move
+                    executeMove(Op1Mode, Op1GPR, Op2Mode, Op2GPR);
+                    Clock += 2;
+                    timeLeft -= 2;
+                    break;
+                case 6: // Branch
+                    executeBranch();
+                    Clock += 2;
+                    timeLeft -= 2;
+                    break;
+                case 7: // BrOnMinus
+                    executeBranchOnCondition(Op1Mode, Op1GPR, value -> value < 0);
+                    Clock += 4;
+                    timeLeft -= 4;
+                    break;
+                case 8: // BrOnPlus
+                    executeBranchOnCondition(Op1Mode, Op1GPR, value -> value > 0);
+                    Clock += 4;
+                    timeLeft -= 4;
+                    break;
+                case 9: // BrOnZero
+                    executeBranchOnCondition(Op1Mode, Op1GPR, value -> value == 0);
+                    Clock += 4;
+                    timeLeft -= 4;
+                    break;
+                case 10: // Push
+                    executePush(fileOut, consoleOut);
+                    Clock += 2;
+                    break;
+                case 11: //Pop
+                    executePop(fileOut, consoleOut);
+                    Clock += 2;
+                    timeLeft -= 2;
+                    break;
+                case 12: // System Call
+                    long[] operand1 = new long[2];
+                    operand1 = fetchOperand(Op1Mode, Op1GPR);
+                    long Op1Value = operand1[1];
+                    if (operand1[1] < 0) {
+                        status = operand1[1];
+                    }
+                    status = systemCall(Op1Value, fileOut, consoleOut);
+                    if (status == 9 || status == 8) {
+                        return status;
+                    } 
+                    Clock += 12;
+                    timeLeft -= 12;
+                    break;
+                default:
+                    System.err.println("Unknown Opcode: " + opcode);
+                    status = errorStatus;
+                    isToExecute = false; // Stops the execution
+            }
+            
+        }
+
+        System.out.println("Time left: " + timeLeft);
+        if(timeLeft <= 0 ) {
+            System.out.println("Time slice expired");
+            status = timeSliceExpiredStatus;
+        } 
+
+        return status;
+    }
+
+
+    // Function: executeArithmetic
+    // Tasks
+    //     Executes Add, Subtract, Multiply, Divide according to the operator parameter
+    // Input Parameters: char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR
+    // Return: void
+    // Error: Division by Zero, Error: Invalid Operator, Error: Destination operand cannot be immediate value
+    private static void executeArithmetic( char operator, long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR ) {
+       
+        long[] operand1 = new long[2];
+        long[] operand2 = new long[2];
+
+        operand1 = fetchOperand(Op1Mode, Op1GPR);
+        long Op1Value = operand1[1];
+        long Op1Address = operand1[0];
+
+        operand2 = fetchOperand(Op2Mode, Op2GPR);
+        long Op2Value = operand2[1];
+        
+        long result;
+
+        // System.out.println("You are in executeArithmetic() after fetching operands and checking that they are > 0");
+
+        if(Op2Value == 0 && operator == '/') {
+            System.err.println("Error: Division by Zero");
+            return;
+        }
+
+
+        switch (operator) {
+            case '+': result = Op1Value + Op2Value; break;
+            case '-': result = Op1Value - Op2Value; break;
+            case '*': result = Op1Value * Op2Value; break;
+            case '/': result = (Op2Value != 0) ? Op1Value / Op2Value : 0; break;
+            default: 
+                System.err.println("Error: Invalid Operator");
+                return;
+        }
+
+
+        if(Op1Mode == 1) {
+            GPRs[(int)Op1GPR] = result; // If Op1Mode == 1, stores the result value into GPR
+        } else if (Op1Mode == 6) {
+            System.err.println("Destination operand cannot be immediate value");
+            return;
+        } else {
+            if(Op1Address < 0 ) {
+                System.err.println("Error: Invalid Operand Address");
+                return;
+            }
+            memory[(int) Op1Address] = result; // All other values of Op1Mode (except 1 and 6) -> stores result into memory
+        }
+
+    }
+
+    // Function: executeMove
+    // Tasks
+    //     Executes Move 
+    // Input Parameters: long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR
+    // Return: void
+    // Error: Destination operand cannot be immediate value
+    private static void executeMove(long Op1Mode, long Op1GPR, long Op2Mode, long Op2GPR) {
+        long Op1Address = fetchOperand(Op1Mode, Op1GPR)[0];
+        long Op2Value = fetchOperand(Op2Mode, Op2GPR)[1];
+        
+
+        if(Op1Mode == 1) {
+            GPRs[(int) Op1GPR] = Op2Value;
+        } else if(Op1Mode == 6){
+            System.err.println("Error: Destination operand cannot be immediate value");
+            return;
+        } else {
+            if(Op1Address < 0 ) {
+                System.err.println("Error: Invalid Operand Address");
+                return;
+            }
+            memory[(int)Op1Address] = Op2Value;
+        } 
+    }
+    
+    // Function: executeBranch
+    // Tasks
+    //     Executes Branch (Jump to the specified address in memory) 
+    // Input Parameters: none
+    // Return: void
+    // Error: Invalid Branch Address
+    private static void executeBranch() {
+        long branchAddr = memory[(int) PC++];
+        if (branchAddr >= 0 && branchAddr < MEMORY_SIZE) {
+            PC = branchAddr;
+        } else {
+            System.err.println("Error: Invalid Branch Address");
+        }
+    }
+
+
+    // Function: executeBranchOnCondition
+    // Tasks
+    //     Executes Branch on Condition (Jump to the specified address in memory if the condition is met) 
+    // Input Parameters: long Op1Mode, long Op1GPR, java.util.function.LongPredicate condition
+    // Return: void
+    // Error: Invalid Memory Address
+    private static void executeBranchOnCondition(long Op1Mode, long Op1GPR, java.util.function.LongPredicate condition) {
+
+        long Op1Value = fetchOperand(Op1Mode, Op1GPR)[1];
+        
+        // System.out.println("Inside executeBranchOnCondition after fetching Op1Value");
+        
+        long branchAddr = memory[(int) PC];
+        if (branchAddr < 0 || branchAddr >= MEMORY_SIZE) {
+            System.err.println("Error: Invalid Memory Address");
+            return;
+        }
+       
+        if (condition.test(Op1Value)) {
+            PC = branchAddr;
+        } else {
+            PC++;
+        }
+        
+    }
+
+
+    // Function: executePush
+    // Tasks
+    //     Adds element on top of the stack 
+    // Input Parameters: none
+    // Return: void
+    // Error: Invalid Memory Address, Error: Stack Overflow
+    private static void executePush(PrintWriter fileOut, PrintWriter consoleOut) {
+        long address = memory[(int) PC];
+        PC++;
+        if(address >= MEMORY_SIZE || address < 0) {
+            System.err.println("Error: Invalid Memory Address");
+            return;
+        }
+        if(SP <= 0) {
+            System.err.println("Error: Stack Overflow");
+            return;
+        }
+        int addressToGetValueFrom = (int) address;
+        int stackAddressToPushValueTo = (int) SP;
+        printBoth(fileOut, consoleOut, "A value to be pushed on the stack: " + memory[addressToGetValueFrom] + "\n");
+        memory[stackAddressToPushValueTo] = memory[addressToGetValueFrom];
+        SP--; // stack grows downwards
+        printBoth(fileOut, consoleOut, "SP after executing push operation points to " + SP + "\n");
+    }
+
+    // Function: executePop
+    // Tasks
+    //     Removes the top element from the stack
+    // Input Parameters: none
+    // Return: void
+    // Error: Invalid Memory Address
+    private static void executePop(PrintWriter fileOut, PrintWriter consoleOut) {
+        SP++;
+        long address = memory[(int) PC++];
+        if(address >= MEMORY_SIZE || address < 0) {
+            System.err.println("Error: Invalid Memory Address");
+            return;
+        }
+        int stackAddressToPopValueFrom = (int) SP;
+        int addressToPutValueTo = (int) address;
+        printBoth(fileOut, consoleOut, "Value to be popped from the stack: " + memory[stackAddressToPopValueFrom] + "\n");
+        memory[addressToPutValueTo] = memory[stackAddressToPopValueFrom];
+        printBoth(fileOut, consoleOut, "SP after executing pop operation points to " + SP + "\n");
+    }
+
+    // Function: systemCall
+    // Tasks: Set PSR to OSMode, executes system call according to provided systemCallId in parameters
+    // Input Parameters: long systemCallId, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: long
+    // Written by Sasha Basova
+    private static long systemCall(long systemCallId, PrintWriter fileOut, PrintWriter consoleOut) {
+        PSR = OSMode;
+
+        printBoth(fileOut, consoleOut, "System Call ID is: " + systemCallId + "\n");
+
+        long status = 1;        // "OK" code
+
+        switch((int)systemCallId) {
+            case 1:     // Create process – user process is creating a child process
+                System.err.println("Create process system call not implemented.");
+                break;
+            case 2:     // Delete process
+                System.err.println("Delete process system call not implemented.");
+                break;
+            case 3:     // Process inquiry
+                System.err.println("Process inquiry system call not implemented.");
+                break;
+            case 4:     // Dynamic memory allocation: Allocate user free memory system call
+                status = MemAllocSystemCall(fileOut, consoleOut);
+                break;
+            case 5:     // Free dynamically allocated user memory system call
+                status = FreeMemSystemCall(fileOut, consoleOut);
+                break;
+            case 6:     // Message Sent 
+                System.err.println("Message Sent system call not implemented.");
+                break;
+            case 7:     // Message Received
+                System.err.println("Message Received system call not implemented.");
+                break;
+            case 8:     // io_getc system call
+                status = io_getcSystemCall();
+                break;
+            case 9:     // io_putc system call
+                status = io_putcSystemCall();
+                break;
+            case 10:    // time_get system call
+                get_systemClock(fileOut, consoleOut);
+                break;
+            case 11:      // time_set system call 
+                set_systemClock(fileOut, consoleOut);
+                break;
+            default:
+                System.err.println("Invalid System Call Id");
+                break;
+        }
+
+        PSR = UserMode;
+        printBoth(fileOut, consoleOut, "System Call status: " + status + "\n");
+        return status;
+    }
+
+    // Written by Maxwell Whelan
+    private static long get_systemClock(PrintWriter fileOut, PrintWriter consoleOut) {
+        long successCode = 6;
+
+        printBoth(fileOut, consoleOut, "Clock: " + Clock);
+        return successCode;
+    }
+
+    // Written by Maxwell Whelan
+    private static long set_systemClock(PrintWriter fileOut, PrintWriter consoleOut) {
+        long successCode = 6;
+
+        Clock = 0;
+        printBoth(fileOut, consoleOut, "Clock set to 0: ");
+        return successCode;
+    }
+
+    // Function: io_getcSystemCall
+    // Tasks: returns io_getc code
+    // Input Parameters: None
+    // Return: long
+    // Written by Maxwell Whelan
+    private static long io_getcSystemCall(){
+        return io_getc;
+    }
+
+    // Function: io_putcSystemCall
+    // Tasks: returns io_putc code
+    // Input Parameters: None
+    // Return: long
+    // Written by Maxwell Whelan
+    private static long io_putcSystemCall() {
+        return io_putc;
+    }
+
+    // Function: MemAllocSystemCall
+    // Tasks: Allocate memory from user free list; Return status from the function is either OK status (6) or an error code
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Return: long
+    // Written by Sasha Basova
+    private static long MemAllocSystemCall(PrintWriter fileOut, PrintWriter consoleOut) {
+        // Allocate memory from user free list
+        // Return status from the function is either OK status (6) or an error code
+
+        long size = GPRs[2];  // Declare long size and set it to GPR2 value. 
+
+        if(size == 1) {
+            size = 2;
+        }
+
+        GPRs[1] = allocateUserMemory(size);
+
+        if(GPRs[1] < 0) {
+            GPRs[0] = GPRs[1];  //Set GPR0 to have the return status
+        } else {
+            GPRs[0] = 6;     // OK status
+        }
+
+        printBoth(fileOut, consoleOut, "MemAllocSystemCall, GPR0: " + GPRs[0] + " GPR1: " + GPRs[1] + " GPR2: " + GPRs[2] + "\n");
+
+        return GPRs[0];
+
+    }
+
+    // Function: FreeMemSystemCall
+    // Tasks: Frees memory to user free list; Return status from the function is either OK status (6) or an error code
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Return: long
+    // Written by Sasha Basova
+    private static long FreeMemSystemCall(PrintWriter fileOut, PrintWriter consoleOut) {
+        // Frees memory to user free list
+        // Return status from the function is either OK status (6) or an error code
+
+        long size = GPRs[2];  // Declare long size and set it to GPR2 value. 
+
+        if(size == 1) {
+            size = 2;
+        }
+
+        long GPR1 = GPRs[1];
+
+        
+        String status = freeUserMemory(GPR1, size); 
+        
+        if(status == "OK") {
+            GPRs[0] = 6;
+        } else {
+            GPRs[0] = -1;
+        }
+
+
+        printBoth(fileOut, consoleOut, "FreeMemSystemCall, GPR0: " + GPRs[0] + " GPR1: " + GPRs[1] + " GPR2: " + GPRs[2] + "\n");
+
+        return GPRs[0];
+
+    }
+
+
+
+    // Function: dumpMemory
+    // Tasks
+    //     Dumps memory of the specified size into console and output file
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut, String message, int start, int size
+    // Return: void
+    private static void dumpMemory(PrintWriter fileOut, PrintWriter consoleOut, String message, int start, int size) {
+        // Print to both file and console
+        printBoth(fileOut, consoleOut, message);
+        printBoth(fileOut, consoleOut, "PC: " + PC + " | Clock: " + Clock + " | SP: " + SP);
+        printBoth(fileOut, consoleOut, "PSR: " + PSR);
+        
+        fileOut.printf("%4s: ", "GPRs");
+        consoleOut.printf("%4s: ", "GPRs");
+        for (int i = 0; i < 8; i++) {
+            fileOut.printf("%8s%d ", "GPR", i);
+            consoleOut.printf("%8s%d ", "GPR", i);
+        }
+        fileOut.println();
+        consoleOut.println();
+
+        fileOut.printf("%4s ", " ");
+        consoleOut.printf("%4s ", " ");
+        for (int i = 0; i < GPRs.length; i++) {
+            fileOut.printf("%9d ", GPRs[i]);
+            consoleOut.printf("%9d ", GPRs[i]);
+        }
+        fileOut.println();
+        consoleOut.println();
+
+        fileOut.printf("%4s ", " ");
+        consoleOut.printf("%4s ", " ");
+        for (int i = 0; i < 10; i++) {
+            fileOut.printf("%9s", "------");
+            consoleOut.printf("%9s", "------");
+        }
+        fileOut.println();
+        consoleOut.println();
+
+        for (int i = start; i < start + size && i < MEMORY_SIZE; i += 10) {
+            fileOut.printf("%4d: ", i);
+            consoleOut.printf("%4d: ", i);
+            for (int j = 0; j < 10 && (i + j) < MEMORY_SIZE; j++) {
+                fileOut.printf("%9d ", memory[i + j]);
+                consoleOut.printf("%9d ", memory[i + j]);
+            }
+            fileOut.println();
+            consoleOut.println();
+        }
+    }
+
+    private static void printBoth(PrintWriter fileOut, PrintWriter consoleOut, String message) {
+        fileOut.println(message);
+        consoleOut.println(message);
+    }
+
+
+    // Function: printList
+    // Tasks: outputs OS/User Free List into output file and console
+    // Input Parameters: long start, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void printList(long start, PrintWriter fileOut, PrintWriter consoleOut) {
+        long current = start; 
+        String list = "";
+        while(current != EndOfList) {
+            list += "(Addr: " + current + ", Size: " + memory[(int)current + 1] + ") -> ";
+            current = memory[(int)current];
+        }
+        list += "Null";
+        printBoth(fileOut, consoleOut, list);
+    }
+
+
+
+     // Function: fetchOperand
+    // Tasks
+    //     fetches operand according to OpMode and OpGPR
+    // Input Parameters: long OpMode, long OpGPR
+    // Return: long[]
+    private static long[] fetchOperand(long OpMode, long OpGPR) {
+        // System.out.println("You are in fetchOperand()");
+        long OpAddress;
+        long OpValue;
+        long[] operand = new long[2]; // creates an array to store operand's value and address
+
+        if(((int) OpGPR) > 8 || ((int) OpGPR) < 0) {
+            System.err.println("Error: Invalid GPR Address");
+            operand[0] = -2;
+            operand[1] = -2;
+            return operand;
+        }
+
+        switch((int)OpMode) {
+            case 1: // Register Mode
+                OpValue = GPRs[(int)OpGPR];
+                OpAddress = -1;
+                break;
+            case 2: // Register Deferred Mode
+                OpAddress = GPRs[(int) OpGPR];
+                if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
+                    OpValue = memory[(int) OpAddress];
+                } else {
+                    System.err.println("Error: Invalid Memory Address");
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
+                }
+                break;
+            case 3: // Autoincrement mode
+                OpAddress = GPRs[(int) OpGPR];
+                if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
+                    OpValue = memory[(int) OpAddress];
+                } else {
+                    System.err.println("Error: Invalid Memory Address");
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
+                }
+                GPRs[(int) OpGPR]++;
+                break;
+            case 4: // Autodecrement mode
+                OpAddress = --GPRs[(int) OpGPR];
+                if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
+                    OpValue = memory[(int) OpAddress];
+                } else {
+                    System.err.println("Error: Invalid Memory Address");
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
+                }
+                break;
+            case 5: // Direct Mode
+                // System.out.println("You are in fetchOperand Mode 5");
+                OpAddress = memory[(int)PC++];
+                if(((int) OpAddress) < 10000 && ((int) OpAddress) >= 0 ) {
+                    OpValue = memory[(int) OpAddress];
+                } else {
+                    System.err.println("Error: Invalid Memory Address");
+                    operand[0] = -2;
+                    operand[1] = -2;
+                    return operand;
+                }
+                break;
+            case 6: // Immediate Mode
+                // System.out.println("You are in FetchOperand Immediate Mode 6");
+                OpValue = memory[(int) PC++];
+                OpAddress = -1;
+                break;
+            default: // Invalid Mode
+                System.err.println("Error: Invalid Operand Mode");
+                operand[0] = -3;
+                operand[1] = -3;
+                return operand;
+        }
+
+        operand[0] = OpAddress;
+        operand[1] = OpValue;
+        return operand;
+    }
+
+
+    // Function: allocateOSMemory
+    // Tasks: allocates OS free memory of the requested size
+    // Input Parameters: long requestedSize
+    // Return: long[] 
+    // Error codes: -2 if no free memory available, -3 if the requested size is invalid
+    // allocateOSMemory function written by Maxwell Whelan 
+    private static long allocateOSMemory(long requestedSize) {
+        long ErrorNoFreeMemory = -2;
+
+        if(OSFreeList == EndOfList) {
+            System.err.println("Error: No free memory available");
+            return ErrorNoFreeMemory;
+        }
+        if(requestedSize < 0) {
+            System.err.println("Error: Invalid requested size");
+            return -3;
+        }
+        if(requestedSize == 1) {
+            requestedSize = 2;
+        }
+
+        long currentPtr = OSFreeList;
+        long prevPtr = EndOfList;
+        
+        while(currentPtr != EndOfList) {
+            // Check each block in the linked list until block with requested memory size is found
+            if(memory[(int)currentPtr + 1] == requestedSize) {
+                if(currentPtr == OSFreeList) {  // if first block has the requested size
+                    OSFreeList = memory[(int)currentPtr];    // now OSFreeList points to the next free block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)prevPtr] = memory[(int)currentPtr]; //previous block points to a block after the current block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+
+            } else if (memory[(int)currentPtr + 1] > requestedSize) {   // found a block with size greater than requested size
+                if(currentPtr == OSFreeList) {  // if it's a first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    OSFreeList = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    memory[(int)prevPtr] = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+            } else {    // small block
+                prevPtr = currentPtr;
+                currentPtr = memory[(int)currentPtr]; // look at the next block
+            }
+        }
+
+        System.err.println("Error: No free block with enough memory is found");
+        return(ErrorNoFreeMemory);
+    }
+
+    // Function: allocateUserMemory
+    // Tasks: allocates User free memory of the requested size
+    // Input Parameters: long requestedSize
+    // Return: long[] 
+    // Error codes: -2 if no free memory available, -3 if the requested size is invalid 
+    // allocateUserMemory function written by Maxwell Whelan
+    private static long allocateUserMemory(long requestedSize) {
+        long ErrorNoFreeMemory = -2;
+
+        if(UserFreeList == EndOfList) {
+            System.err.println("Error: No free memory available");
+            return ErrorNoFreeMemory;
+        }
+        if(requestedSize < 0) {
+            System.err.println("Error: Invalid requested size");
+            return -3;
+        }
+        if(requestedSize == 1) {
+            requestedSize = 2;
+        }
+
+        long currentPtr = UserFreeList;
+        long prevPtr = EndOfList;
+        
+        while(currentPtr != EndOfList) {
+            // Check each block in the linked list until block with requested memory size is found
+            if(memory[(int)currentPtr + 1] == requestedSize) {
+                if(currentPtr == UserFreeList) {  // if first block has the requested size
+                    UserFreeList = memory[(int)currentPtr];    // now OSFreeList points to the next free block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)prevPtr] = memory[(int)currentPtr]; //previous block points to a block after the current block
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+
+            } else if (memory[(int)currentPtr + 1] > requestedSize) {   // found a block with size greater than requested size
+                if(currentPtr == UserFreeList) {  // if it's a first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    UserFreeList = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                } else {    // if not the first block
+                    memory[(int)currentPtr + (int)requestedSize] = memory[(int)currentPtr]; // move the pointer to the next block
+                    memory[(int)currentPtr + (int)requestedSize + 1] = memory[(int)currentPtr + 1] - requestedSize;
+                    memory[(int)prevPtr] = currentPtr + requestedSize;
+                    memory[(int)currentPtr] = EndOfList;
+                    return(currentPtr);
+                }
+            } else {    // small block
+                prevPtr = currentPtr;
+                currentPtr = memory[(int)currentPtr]; // look at the next block
+            }
+        }
+
+        System.err.println("Error: No free block with enough memory is found");
+        return(ErrorNoFreeMemory);
+    }
+
+
+    // Function: freeOSMemory
+    // Tasks: free OS memory block of the requested size and inserts the free block into the linked list according to its address, performs merge if necessary 
+    // Input Parameters: long ptr, long size
+    // Return: String "OK", or "Error"
+    // Error codes: -2 if the address is outside OS free memory, -3 if the size or address is invalid 
+    // freeOSMemory function written by Sasha Basova
+    private static String freeOSMemory(long ptr, long size) {
+        int returnCode = 1;
+        if(ptr < 7000 || ptr > 9999) {
+            System.err.println("Error: The address is outside OS free memory");
+            returnCode = -2;
+        }
+        if(size == 1) {
+            size = 2;
+        }
+        if(size < 1 || (ptr + size) >= 9999 ) {
+            System.err.println("Error: Invalid size or memory address");
+            returnCode = -3;
+        }
+
+        // for(int i = 0; i <= (int)size; i++) {
+        //     memory[(int)ptr + i] = 0;
+        // }
+
+        if(ptr < OSFreeList) {      // if ptr < address pointed by UserFreeList, insert the block in the beginning of the list
+
+            if(ptr + size == OSFreeList){   // merge the inserted and first block if the inserted block address + its size = first block address
+                memory[(int)ptr] = memory[(int)OSFreeList];
+                memory[(int)ptr + 1] = size + memory[(int)OSFreeList + 1];
+                OSFreeList = ptr;
+            } else {
+                memory[(int)ptr] = OSFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+                memory[(int)ptr + 1] = size;
+                OSFreeList = ptr;
+            }
+
+        } else {        // insert the free block into the Linked List where it belongs according to its address
+            long currentAddr = OSFreeList;
+            while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] != EndOfList){
+                currentAddr = memory[(int)currentAddr];
+            }
+            
+            if(ptr + size == memory[(int)currentAddr]) {    // merge if the right  neighbor blocks intersect
+                memory[(int)ptr] = memory[(int)memory[(int)currentAddr]];
+                memory[(int)ptr + 1] = size + memory[(int)memory[(int)currentAddr] + 1];
+                memory[(int)currentAddr] = ptr;
+            } else if(currentAddr + memory[(int)currentAddr + 1] == ptr){   // merge if the left neighbor blocks intersect
+                memory[(int)currentAddr + 1] = memory[(int)currentAddr + 1] + size;
+            }  else {
+                memory[(int)ptr] = memory[(int)currentAddr];
+                memory[(int)ptr + 1] = size;
+                memory[(int)currentAddr] = ptr;
+            }
+
+        }
+
+        if(returnCode > 0) {
+            return "OK";
+        } else {
+            return "Error";
+        }
+    }
+
+    // Function: freeUserMemory
+    // Tasks: free User memory block of the requested size and inserts the free block into the linked list according to its address, performs merge if necessary 
+    // Input Parameters: long ptr, long size
+    // Return: String "OK", or "Error"
+    // Error codes: -2 if the address is outside User free memory, -3 if the size or address is invalid 
+    // freeUserMemory written by Sasha Basova
+    private static String freeUserMemory(long ptr, long size) {
+        int returnCode = 1;
+        if(ptr < 3000 || ptr > 6999 ) {
+            System.err.println("Error: The address is outside User free memory");
+            returnCode = -2;
+        }
+        if(size == 1) {
+            size = 2;
+        }
+        if(size < 1 || (ptr + size) >= 6999 ) {
+            System.err.println("Error: Invalid size or memory address");
+            returnCode = -3;
+        }
+
+        
+
+            if(ptr < UserFreeList) {    // if ptr < address pointed by UserFreeList, insert the block in the beginning of the list
+
+                if(ptr + size == UserFreeList){     // merge the inserted and first block if the inserted block address + its size = first block address
+                    
+                    memory[(int)ptr] = memory[(int)UserFreeList];
+                    memory[(int)ptr + 1] = size + memory[(int)UserFreeList + 1];
+                    UserFreeList = ptr;
+                } else {
+                    memory[(int)ptr] = UserFreeList; // inserted free block points to the next free block ( that used to be the first free block)
+                    memory[(int)ptr + 1] = size;
+                    UserFreeList = ptr;
+                }
+
+            } else {    // insert the free block into the Linked List where it belonged
+                long currentAddr = UserFreeList;
+                while(ptr > memory[(int)currentAddr] && memory[(int)currentAddr] != EndOfList){
+                    currentAddr = memory[(int)currentAddr];
+                    
+                }
+                
+                if(ptr + size == memory[(int)currentAddr]) {    // merge if the right neighbor blocks intersect
+                    memory[(int)ptr] = memory[(int)memory[(int)currentAddr]];
+                    memory[(int)ptr + 1] = size + memory[(int)memory[(int)currentAddr] + 1];
+                    memory[(int)currentAddr] = ptr;
+                } else if(currentAddr + memory[(int)currentAddr + 1] == ptr){
+                    memory[(int)currentAddr + 1] = memory[(int)currentAddr + 1] + size;
+                } else {
+                    memory[(int)ptr] = memory[(int)currentAddr];
+                    memory[(int)ptr + 1] = size;
+                    memory[(int)currentAddr] = ptr;
+                }
+            }
+
+
+        if(returnCode > 0) {
+            return "OK";
+        } else {
+            return "Error";
+        }
+    }
+
+    // Function: createProcess
+    // Tasks: creates a process by allocating OS memory for a PCB, initializing PCB, loading the program into dynamic memory, inserting PCB into Ready Queue
+    // Input Parameters: String filename, long priority, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: 1 (success), or -2 (error)
+    // Error codes: -2 
+    // Written by Sasha Basova
+    private static long createProcess(String filename, long priority, PrintWriter fileOut, PrintWriter consoleOut) {
+
+        long errorCode = -2;
+        long successCode = 1;
+
+        // Allocate space for Process Control Block in OS Free List
+        long PCBptr = allocateOSMemory(PCBsize);
+        if(PCBptr < 0) {
+            return errorCode;
+        }
+
+        // Initialize PCB
+        initializePCB(PCBptr);
+
+        // Load the program into memory using AbsoluteLoader
+        long PCvalue = absoluteLoader(filename);
+        if(PCvalue < 0) {
+            return errorCode;
+        }
+
+        // Store PC value into PC field in the PCB
+        memory[(int)PCBptr + 16] = PCvalue;
+
+        // Allocate stack space from user free list
+        long ptr = allocateUserMemory(StackSize);
+        if(ptr < 0) {
+            freeOSMemory(PCBptr, PCBsize);
+            return errorCode;
+        }
+
+        // Store stack info in the PCB - SP, stack start address and stack size
+        memory[(int)PCBptr + 15] = ptr + StackSize;
+        memory[(int)PCBptr + 5] = ptr;
+        memory[(int)PCBptr + 6] = StackSize;
+        
+        // Set priority in the PCB to parameter priority
+        memory[(int)PCBptr + 4] = priority;
+
+        // Print PCB passing PCBptr 
+        printBoth(fileOut, consoleOut, "Process successfully created");
+        printPCB(PCBptr, fileOut, consoleOut);
+
+        
+        // Insert PCB into Ready Queue passing PCBptr 
+        long statusQueue = insertIntoRQ(PCBptr, fileOut, consoleOut);
+        if(statusQueue < 0) {
+            return errorCode;
+        }
+        printBoth(fileOut, consoleOut, "Process successfully added to RQ");
+        printPCB(PCBptr, fileOut, consoleOut);
+        printBoth(fileOut, consoleOut, "RQ: " + RQ);
+
+        return successCode;
+
+
+    }
+
+    // Function: initializePCB
+    // Tasks: Initializes PCB by setting PID to ProcessID, state to CreatedState (0), priority to DefaultPriority 128, next PCB pointer to EndOfList, CPU context to 0s
+    // Input Parameters: long PCBptr
+    // Return: void
+    // Written by Sasha Basova
+    private static void initializePCB(long PCBptr) {
+        // Set entire PCB area to 0 using PCBptr
+        for (int i = 0; i < (int) PCBsize; i++) {
+            memory[(int)PCBptr + i] = 0;
+        }
+
+        // Allocate PID and set it in the PCB
+        memory[(int)PCBptr + 1] = ProcessID++;
+
+        // CreatedState is a constant set to 0
+        memory[(int)PCBptr + 2] = CreatedState;
+
+        // DefaultPriority is a constant set to 128
+        memory[(int)PCBptr + 4] = DefaultPriority;
+
+        // Set next PCB pointer to EndOfList
+        memory[(int)PCBptr ] = EndOfList;
+
+    }
+
+    // Function: printPCB
+    // Tasks: outputs PCB both into output file and console using printBoth method
+    // Input Parameters: long PCBptr, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void printPCB(long PCBptr, PrintWriter fileOut, PrintWriter consoleOut) {
+        String pcb = "";
+        pcb = String.format("Process Control Block %d%n", memory[(int)PCBptr + 1]);
+        pcb += String.format("PCB address = %d, Next PCB Ptr = %d, PID = %d, State = %d, PC = %d, SP = %d, %nPriority = %d, Stack Info: start address = %d, size = %d%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
+        // System.out.printf("Process Control Block %l%n", memory[(int)PCBptr + 1]);
+        // System.out.printf("PCB address = %l, Next PCB Ptr = %l, PID = %l, State = %l, PC = %l, SP = %l, %nPriority = %l, Stack Info: start address = %l, size = %l%nGPRs: %n", PCBptr, memory[(int)PCBptr], memory[(int)PCBptr + 1], memory[(int)PCBptr + 2], memory[(int)PCBptr + 16], memory[(int)PCBptr + 15], memory[(int)PCBptr + 4], memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
+        int count = 0;
+        for(int i = 7; i <= 14; i++) {
+            // System.out.printf("GPR %d: %l%n", count, memory[(int)PCBptr + i]);
+            pcb += String.format("GPR %d: %d%n", count, memory[(int)PCBptr + i]);
+            count++;
+        }
+        printBoth(fileOut, consoleOut, pcb);
+    }
+
+    // Function: printQueue
+    // Tasks: outputs Ready/Waiting Queue both into output file and console using printPCB method
+    // Input Parameters: long Qptr, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void printQueue(long Qptr, PrintWriter fileOut, PrintWriter consoleOut) {
+
+        // print each PCB as you move from one PCB to the next
+        long currentPCBptr = Qptr;
+
+        if(currentPCBptr == EndOfList) {
+            printBoth(fileOut, consoleOut, "Queue is empty");
+            return;
+        }
+
+        // walk through the queue
+        while(currentPCBptr != EndOfList) {
+            printPCB(currentPCBptr, fileOut, consoleOut);
+            currentPCBptr = memory[(int)currentPCBptr];
+        }
+        printBoth(fileOut, consoleOut, "End of Queue");
+    }
+
+
+    // Function: insertIntoRQ
+    // Tasks: Utilizing the priority round robin algorith and using the priority field within the PCB by going through the ready queue
+    // to find where to insert.
+    // Input Parameters: long PCBptr, currentPtr
+    // Return: successCode
+    // Written by Maxwell Whelan
+    private static long insertIntoRQ(long PCBptr, PrintWriter fileOut, PrintWriter consoleOut) {
+        // Insert PCB according to Priority Round Robin algorithm
+        // Use priority field in PCB to find the correct place to insert
+
+        long errorCode = -1;
+        long successCode = 1;
+
+        long previousPtr = EndOfList;
+        long currentPtr = RQ;
+
+        // Check for invalid PCB memory address
+        if((PCBptr < 0) || (PCBptr > MEMORY_SIZE - 1)) {
+            System.err.println("Error: Invalid PCB memory address.");
+            return errorCode;
+        }
+
+        memory[(int)PCBptr + 2] = ReadyState;
+        // memory[(int)PCBptr] = EndOfList;
+
+        if(RQ == EndOfList) {   //Ready Queue is empty
+            RQ = PCBptr;
+            return successCode;
+        }
+
+        // Walk through Ready Queue and find the place to insert
+        while(currentPtr != EndOfList) {
+            if(memory[(int)PCBptr + 4] > memory[(int)currentPtr + 4] || (memory[(int)PCBptr + 4] == memory[(int)currentPtr + 4] && interrupt == 1)) {
+                if(previousPtr == EndOfList) {
+                    // enter PCB in the front of the list as the first entry
+                    memory[(int)PCBptr] = RQ;
+                    RQ = PCBptr;
+                    return successCode;
+                }
+                // enter in the middle of the list
+                // printBoth(fileOut, consoleOut, "previousPtr: " + previousPtr);
+                // printBoth(fileOut, consoleOut, "currentPtr: " + currentPtr);
+                memory[(int)PCBptr] = currentPtr;
+                memory[(int)previousPtr] = PCBptr;
+                return successCode;
+            }  else {
+                // PCB to be inserted has lower or equal priority to the current PCB in RQ
+                // Go to the next PCB in Ready Queue
+                previousPtr = currentPtr;
+                currentPtr = memory[(int)currentPtr];
+            }
+        } 
+
+        // Insert PCB in the end of the Ready Queue
+        memory[(int)previousPtr] = PCBptr;
+        return successCode;
+    }
+
+    // Function: insertIntoWQ
+    // Tasks: Check for invalid PCB memory and place the PCB at the front of waiting queue
+    // Input Parameters: long PCBptr
+    // Return: SuccessCode
+    // Written by Maxwell Whelan
+    private static long insertIntoWQ(long PCBptr) {
+        // Insert the given PCB at the front of the Waiting Queue
+        long errorCode = -1;
+        long successCode = 1;
+
+        // Check for invalid PCB memory address
+        if((PCBptr < 0) || (PCBptr > MEMORY_SIZE - 1)) {
+            System.err.println("Error: Invalid PCB memory address.");
+            return errorCode;
+        }
+
+        memory[(int)PCBptr + 2] = WaitingState; // Waiting state = 2
+        memory[(int)PCBptr] = WQ;        
+
+        WQ = PCBptr;
+
+        return successCode;
+
+    }
+
+    // Function: searchAndRemovePCBfromWQ
+    // Tasks: Find a PCB with the given pid in the queue, and remove it from the waiting queue, returning the PCB pointer
+    // Input Parameters: long pid
+    // Return: currentPCBptr
+    // Written by Maxwell Whelan
+    private static long searchAndRemovePCBfromWQ(long pid) {
+        long currentPCBptr = WQ;
+        long previousPCBptr = EndOfList;
+
+        // Search Waiting Queue for a PCB that has the given pid
+        // If match is found, remove it from Waiting Queue and return PCB pointer
+        while(currentPCBptr != EndOfList) {
+            if(memory[(int)currentPCBptr + 1] == pid) {
+                // match found, remove from waiting queue
+                if(previousPCBptr == EndOfList) {
+                    // first PCB
+                    WQ = memory[(int)currentPCBptr];
+                } else {
+                    // not first PCB
+                    memory[(int)previousPCBptr] = memory[(int)currentPCBptr];
+                }
+
+                memory[(int)currentPCBptr] = EndOfList;
+                return(currentPCBptr);
+            }
+            previousPCBptr = currentPCBptr;
+            currentPCBptr = memory[(int)currentPCBptr];
+        }
+
+        // No matching PCB is found. Display pid message and return EndOfList
+        System.err.println("No PCB matching given pid is found in Waiting Queue.");
+        return EndOfList;
+    }
+
+    // Function: searchAndRemovePCBfromWQ
+    // Tasks: Find PCB with given pid in Ready Queue, once found, remove it from queue and return pcb pointer
+    // Input Parameters: long pid
+    // Return: currentPCBptr
+    // Written by Maxwell Whelan
+    private static long searchPCBfromRQ(long pid) {
+        long currentPCBptr = RQ;
+        long previousPCBptr = EndOfList;
+
+        // Search Ready Queue for a PCB that has the given pid
+        // If match is found, remove it from Ready Queue and return PCB pointer
+        while(currentPCBptr != EndOfList) {
+            if(memory[(int)currentPCBptr + 1] == pid) {
+                
+                return(currentPCBptr);
+            }
+
+            previousPCBptr = currentPCBptr;
+            currentPCBptr = memory[(int)currentPCBptr];
+        }
+
+        // No matching PCB is found. Display pid message and return EndOfList
+        System.err.println("No PCB matching given pid is found in Ready Queue.");
+        return EndOfList;
+    }
+
+    // Function: terminateProcess
+    // Tasks: terminates process by removing it from OS memory, freeing stack
+    // Input Parameters: long PCBptr
+    // Return: 1 (if success), -1 (if error)
+    // Error code: -1
+    // Written by Sasha Basova
+    private static long terminateProcess(long PCBptr, PrintWriter fileWriter, PrintWriter consoleWriter) {
+        long errorCode = -1;
+        long successCode = 1;
+
+        // return PCB memory using the PCBptr and PCBsize
+        String statusOS = freeOSMemory(PCBptr, PCBsize);
+        if(statusOS == "Error") {
+            System.err.println("Error: Freeing OS memory failed.");
+            return errorCode;
+        }
+
+        // return stack memory using stack start address and stack size in the given PCB
+        String statusUser = freeUserMemory(memory[(int)PCBptr + 5], memory[(int)PCBptr + 6]);
+        if(statusUser == "Error") {
+            printBoth(fileWriter, consoleWriter, "Error: Freeing User memory failed.");
+            return errorCode;
+        }
+        
+        
+        return successCode;
+    }
+
+    // Function: insertIntoRQ
+    // Tasks: remove first PCB from queue and set the next pointer to EndOfList
+    // Input Parameters: none
+    // Return: PCBptr
+    // Written by Maxwell Whelan
+    private static long selectProcessFromRQ() {
+        long PCBptr = RQ;   // first entry in Ready Queue
+
+        if(RQ != EndOfList) {
+            // remove first PCB from Ready Queue
+            RQ = memory[(int)PCBptr];
+            // Set next PCB pointer to EndOfList in the selected PCB
+           
+        }
+        memory[(int)PCBptr] = EndOfList;
+        
+        return(PCBptr);
+    }
+
+    // Function: saveContext
+    // Tasks: saves CPU context to PCB
+    // Input Parameters: long PCBptr
+    // Return: void
+    // Written by Sasha Basova
+    private static void saveContext(long PCBptr) {
+        // Assume PCBptr is a valid pointer
+
+        // Copy all CPU GPRs into PCB
+        for(int i = 0; i < 8; i++) {
+            memory[(int)PCBptr + 7 + i] = GPRs[i];
+        }
+
+        // Copy SP into PCB
+        memory[(int)PCBptr + 15] = SP;
+
+        //Copy PC into PCB
+        memory[(int)PCBptr + 16] = PC;
+
+    }
+
+     // Function: dispatcher
+    // Tasks: restores CPU context from PCB
+    // Input Parameters: long PCBptr
+    // Return: void
+    // Written by Sasha Basova
+    private static void dispatcher(long PCBptr) {
+        // Assume PCBptr is a valid pointer
+        
+        // Copy CPU GPRs from given PCB into the GPRs
+        for(int i = 0; i < 8; i++) {
+            GPRs[i] = memory[(int)PCBptr + 7 + i];
+        }
+
+        // Restore SP
+        SP = memory[(int)PCBptr + 15];
+
+        // Restore PC
+        PC = memory[(int)PCBptr + 16];
+
+        // Set system mode to User mode
+        PSR = UserMode;     // UserMode is 2, OSMode is 1
+    }
+
+    // Function: checkAndProcessInterrupt
+    // Tasks: prompts user for an interrupt id and calls interrupt service accordingly
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void checkAndProcessInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
+        
+        printBoth(fileOut, consoleOut, "Enter interrupt ID: 0 - no interrupt, 1 - run program, 2 - shutdown system, 3 - Input operation completion (io_getc), 4 - Output operation completion (io_putc): ");
+        String interruptId = scanner.nextLine();
+        int interruptID = Integer.parseInt(interruptId);
+        printBoth(fileOut, consoleOut, "You chose " + interruptID);
+        
+
+        // Process interrupt
+        switch(interruptID) {
+            case 0:     // no interrupt
+                break;
+            case 1:     // run program
+                ISRrunProgramInterrupt(scanner, fileOut, consoleOut);
+                break;
+            case 2:     // shutdown system interrupt
+                ISRshutdownSystem(fileOut, consoleOut);
+                shutdown = true;        // set global variable shutdown to true forcing the program to exit from the running loop
+                break;
+            case 3:     // input operation completion interrupt
+                ISRinputCompletionInterrupt(scanner, fileOut, consoleOut);
+                break;
+            case 4:     // output operation completion interrupt
+                ISRoutputCompletionInterrupt(scanner, fileOut, consoleOut);
+                break;
+            default:
+                System.err.println("Invalid interrupt ID");
+                break;
+        }
+        
+        return;
+    }
+
+
+    // Function: ISRrunProgramInterrupt
+    // Tasks: Prompts user to enter filename, create process and inserts it into Ready Queue with an interrupt flag set to true, which changes the method if equal priorities ecountered
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Maxwell Whelan
+    private static void ISRrunProgramInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
+        
+        printBoth(fileOut, consoleOut, "Enter filename:  ");
+        String filename = scanner.nextLine();
+        printBoth(fileOut, consoleOut, "You entered: " + filename);
+
+        interrupt = 1;
+        createProcess(filename, DefaultPriority, fileOut, consoleOut);
+        interrupt = EndOfList;
+        return;
+    }
+
+
+    // Function: ISRshutdownSystem
+    // Tasks: Terminate all processes in RQ and WQ
+    // Input Parameters: PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Maxwell Whelan
+    private static void ISRshutdownSystem(PrintWriter fileOut, PrintWriter consoleOut) {
+        // Terminate all processes in RQ and WQ and exit from the program
+
+        long ptr = RQ;
+
+        // Terminate all processes in RQ one by one
+        while(ptr != EndOfList) {
+            RQ = memory[(int)ptr];
+            terminateProcess(ptr, fileOut, consoleOut);
+            ptr = RQ;
+        }
+
+        // Terminate all processes in WQ one by one
+        ptr = WQ;
+
+        while(ptr != EndOfList) {
+            WQ = memory[(int)ptr];
+            terminateProcess(ptr, fileOut, consoleOut);
+            ptr = WQ;
+        }
+
+        printBoth(fileOut, consoleOut, "System is successfully shut down");
+        return;
+
+    }
+
+    // Function: ISRinputCompletionInterrupt
+    // Tasks: propmts user for a process Id that will be completing input interrupt, searches Waiting Queue and Ready Queue for the process with a given id, prompts user for a character and stores its ASCII format in PCB's GPR1
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void ISRinputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
+        printBoth(fileOut, consoleOut, "Enter process PID completing input completion interrupt:  ");
+        String pid = scanner.nextLine();
+        long PID = Integer.parseInt(pid);
+        
+
+        long PCBptr = searchAndRemovePCBfromWQ(PID);
+        if(PCBptr > 0) {
+            
+            printBoth(fileOut, consoleOut, "PCB found in Waiting Queue");
+            printBoth(fileOut, consoleOut, "Enter one character:  ");
+            char inputChar = scanner.next().charAt(0);
+            scanner.nextLine();
+            long asciiValue = (int)inputChar;
+            printBoth(fileOut, consoleOut, "The ASCII value of '" + inputChar + "' is: " + asciiValue);
+            
+            
+
+            memory[(int)PCBptr + 11] = asciiValue;  // Store the character in the GPR 4 in the PCB
+            printBoth(fileOut, consoleOut, "Character in PCB R4: " + memory[(int)PCBptr + 11]);
+            insertIntoRQ(PCBptr, fileOut, consoleOut);
+        } else {
+            PCBptr = searchPCBfromRQ(PID);
+            if(PCBptr > 0) {
+               
+                printBoth(fileOut, consoleOut, "PCB with entered PID is found in Ready Queue.");
+                printBoth(fileOut, consoleOut, "Enter one character:  ");
+                // System.out.print("Enter one character:  ");
+                char inputChar = scanner.next().charAt(0);
+                scanner.nextLine();
+                long asciiValue = (int)inputChar;
+                printBoth(fileOut, consoleOut, "The ASCII value of '" + inputChar + "' is: " + asciiValue);
+                
+
+                memory[(int)PCBptr + 11] = asciiValue;  // Store the character in the GPR 4 in the PCB
+            } else {
+                printBoth(fileOut, consoleOut, "Invalid PID provided.");
+            }
+        }
+
+        return;
+
+    }
+
+
+    // Function: ISRoutputCompletionInterrupt
+    // Tasks: propmts user for a process Id that will be completing output interrupt, searches Waiting Queue and Ready Queue for the process with a given id, and outputs the value stored in PCB's GPR1
+    // Input Parameters: Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut
+    // Return: void
+    // Written by Sasha Basova
+    private static void ISRoutputCompletionInterrupt(Scanner scanner, PrintWriter fileOut, PrintWriter consoleOut) {
+        printBoth(fileOut, consoleOut, "Enter process PID completing output interrupt:  ");
+        String pid = scanner.nextLine();
+        long PID = Integer.parseInt(pid);
+        
+
+        long PCBptr = searchAndRemovePCBfromWQ(PID);
+        if(PCBptr > 0) {
+            printBoth(fileOut, consoleOut, "PCB found in Waiting Queue");
+            long outputChar = memory[(int)PCBptr + 11];
+            printBoth(fileOut, consoleOut, "Output character in ASCII format: " + outputChar);
+            insertIntoRQ(PCBptr, fileOut, consoleOut);
+
+        } else {
+            PCBptr = searchPCBfromRQ(PID);
+            if(PCBptr > 0) {
+                printBoth(fileOut, consoleOut, "PCB is found in Ready Queue");
+                long outputChar = memory[(int)PCBptr + 11];
+                printBoth(fileOut, consoleOut, "Output character in ASCII format: " + outputChar);
+
+            } else {
+                printBoth(fileOut, consoleOut, "Invalid PID provided.");
+            }
+        }
+
+        return;
+    }
+}
+ 
